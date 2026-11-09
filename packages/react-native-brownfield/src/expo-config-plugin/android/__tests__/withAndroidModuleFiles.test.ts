@@ -1,0 +1,635 @@
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
+import type { ResolvedBrownfieldPluginConfigWithAndroid } from '../../types';
+import {
+  createAndroidModule,
+  resolveCompileSdkVersionExpression,
+  resolveTargetSdkVersionExpression,
+  syncAndroidModuleExpoUpdatesFromAppFiles,
+} from '../withAndroidModuleFiles';
+
+describe('createAndroidModule', () => {
+  const tempDirectories: string[] = [];
+
+  afterEach(() => {
+    for (const tempDirectory of tempDirectories.splice(0)) {
+      fs.rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it('copies Expo Updates metadata into the generated library manifest', () => {
+    const androidDir = createAndroidDir();
+
+    writeAppManifest(
+      androidDir,
+      `<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application android:name=".MainApplication">
+    <meta-data android:name="expo.modules.updates.EXPO_RUNTIME_VERSION" android:value="@string/expo_runtime_version" />
+    <meta-data android:name="expo.modules.updates.UPDATES_CONFIGURATION_REQUEST_HEADERS_KEY" android:value="{&quot;expo-channel-name&quot;:&quot;production&quot;}" />
+    <meta-data android:name="com.example.NOT_UPDATES" android:value="ignored" />
+  </application>
+</manifest>`
+    );
+    writeAppStrings(
+      androidDir,
+      `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="expo_runtime_version">1.0.0</string>
+</resources>`
+    );
+
+    createAndroidModule({
+      androidDir,
+      config: createConfig(),
+      rnVersion: '0.82.1',
+    });
+
+    expect(readLibraryManifest(androidDir))
+      .toBe(`<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <meta-data android:name="expo.modules.updates.EXPO_RUNTIME_VERSION" android:value="@string/expo_runtime_version" />
+    <meta-data android:name="expo.modules.updates.UPDATES_CONFIGURATION_REQUEST_HEADERS_KEY" android:value="{&quot;expo-channel-name&quot;:&quot;production&quot;}" />
+  </application>
+</manifest>`);
+    expect(readLibraryStrings(androidDir))
+      .toBe(`<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="expo_runtime_version">1.0.0</string>
+</resources>
+`);
+  });
+
+  it('keeps the generated library manifest empty when Expo Updates metadata is absent', () => {
+    const androidDir = createAndroidDir();
+
+    writeAppManifest(
+      androidDir,
+      `<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application android:name=".MainApplication">
+    <meta-data android:name="com.example.NOT_UPDATES" android:value="ignored" />
+  </application>
+</manifest>`
+    );
+
+    createAndroidModule({
+      androidDir,
+      config: createConfig(),
+      rnVersion: '0.82.1',
+    });
+
+    expect(readLibraryManifest(androidDir))
+      .toBe(`<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+</manifest>`);
+    expect(readLibraryStrings(androidDir))
+      .toBe(`<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+</resources>
+`);
+  });
+
+  it('overwrites existing library Expo Updates files with the finalized app file values', () => {
+    const androidDir = createAndroidDir();
+    const config = createConfig();
+
+    writeAppManifest(
+      androidDir,
+      `<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application android:name=".MainApplication">
+    <meta-data android:name="expo.modules.updates.EXPO_UPDATES_CHECK_ON_LAUNCH" android:value="NEVER" />
+    <meta-data android:name="expo.modules.updates.EXPO_RUNTIME_VERSION" android:value="@string/expo_runtime_version" />
+  </application>
+</manifest>`
+    );
+    writeAppStrings(
+      androidDir,
+      `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="expo_runtime_version">1.0.0</string>
+</resources>`
+    );
+
+    createAndroidModule({
+      androidDir,
+      config,
+      rnVersion: '0.82.1',
+    });
+
+    writeAppManifest(
+      androidDir,
+      `<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application android:name=".MainApplication">
+    <meta-data android:name="expo.modules.updates.EXPO_UPDATES_CHECK_ON_LAUNCH" android:value="ALWAYS" />
+    <meta-data android:name="expo.modules.updates.EXPO_RUNTIME_VERSION" android:value="@string/expo_runtime_version" />
+  </application>
+</manifest>`
+    );
+    writeAppStrings(
+      androidDir,
+      `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="expo_runtime_version">2.0.0</string>
+</resources>`
+    );
+
+    syncAndroidModuleExpoUpdatesFromAppFiles({
+      androidDir,
+      config,
+    });
+
+    expect(readLibraryManifest(androidDir)).toContain(
+      'android:name="expo.modules.updates.EXPO_UPDATES_CHECK_ON_LAUNCH" android:value="ALWAYS"'
+    );
+    expect(readLibraryManifest(androidDir)).not.toContain(
+      'android:name="expo.modules.updates.EXPO_UPDATES_CHECK_ON_LAUNCH" android:value="NEVER"'
+    );
+    expect(readLibraryStrings(androidDir)).toContain(
+      '<string name="expo_runtime_version">2.0.0</string>'
+    );
+  });
+
+  it('inherits compileSdk from the Expo app project when the user did not override it', () => {
+    const androidDir = createAndroidDir();
+
+    createAndroidModule({
+      androidDir,
+      config: createConfig({
+        android: {
+          compileSdkVersion: undefined,
+        },
+      }),
+      rnVersion: '0.85.3',
+    });
+
+    expect(readLibraryBuildGradle(androidDir)).toContain(
+      'compileSdk = resolveRootProjectInt("compileSdkVersion")'
+    );
+    expect(readLibraryBuildGradle(androidDir)).toContain('targetSdk = 35');
+  });
+
+  it('inherits compileSdk from the app project on the vanilla variant used by the RN CLI scaffold', () => {
+    const androidDir = createAndroidDir();
+
+    // The RN CLI scaffold (scaffold/index.ts) passes compileSdkVersion:
+    // undefined on purpose, so the shared template must fall back to the
+    // app's own rootProject.ext value instead of a hardcoded level.
+    createAndroidModule({
+      androidDir,
+      config: createConfig({
+        android: {
+          compileSdkVersion: undefined,
+        },
+      }),
+      rnVersion: '0.87.1',
+      templateVariant: 'vanilla',
+    });
+
+    expect(readLibraryBuildGradle(androidDir)).toContain(
+      'compileSdk = resolveRootProjectInt("compileSdkVersion")'
+    );
+  });
+
+  it('keeps targetSdk when the optional Expo SDK version is omitted', () => {
+    const androidDir = createAndroidDir();
+
+    createAndroidModule({
+      androidDir,
+      config: createConfig({
+        android: { targetSdkVersion: undefined },
+      }),
+      rnVersion: '0.81.0',
+    });
+
+    expect(readLibraryBuildGradle(androidDir)).toContain(
+      'targetSdk = resolveRootProjectInt("targetSdkVersion")'
+    );
+  });
+
+  it('keeps the generated host manager under the configured package name', () => {
+    const androidDir = createAndroidDir();
+    const packageName = 'org.example.customhost';
+
+    createAndroidModule({
+      androidDir,
+      config: createConfig({ android: { packageName } }),
+      rnVersion: '0.81.0',
+    });
+
+    const proguardRules = fs.readFileSync(
+      path.join(androidDir, 'brownfieldlib', 'proguard-rules.pro'),
+      'utf8'
+    );
+    expect(proguardRules).toContain(
+      `-keep class ${packageName}.ReactNativeHostManager { *; }`
+    );
+    expect(proguardRules).not.toContain('{{PACKAGE_NAME}}');
+    expect(
+      fs.existsSync(
+        path.join(
+          androidDir,
+          'brownfieldlib',
+          'src/main/java/org/example/customhost/ReactNativeHostManager.kt'
+        )
+      )
+    ).toBe(true);
+  });
+
+  it('renders the vanilla host manager without Expo imports for the vanilla template variant', () => {
+    const androidDir = createAndroidDir();
+
+    createAndroidModule({
+      androidDir,
+      config: createConfig(),
+      rnVersion: '0.81.0',
+      templateVariant: 'vanilla',
+    });
+
+    const hostManager = readLibraryHostManager(androidDir);
+    expect(hostManager).toContain('package com.example.brownfield');
+    expect(hostManager).toContain(
+      'ReactNativeBrownfield.initialize(application, onJSBundleLoaded)'
+    );
+    expect(hostManager).toContain('setEdgeToEdgeFeatureFlagOn()');
+    expect(hostManager).not.toContain('ReactNativeApplicationEntryPoint');
+    expect(hostManager).not.toContain('{{PACKAGE_NAME}}');
+
+    // Expo-only wiring must not leak into the RN CLI variant.
+    expect(hostManager).not.toContain('expo.modules');
+    expect(hostManager).not.toContain('ExpoReactHostFactory');
+    expect(hostManager).not.toContain('ApplicationLifecycleDispatcher');
+  });
+
+  it('renders the Expo host manager by default when no template variant is given', () => {
+    const androidDir = createAndroidDir();
+
+    createAndroidModule({
+      androidDir,
+      config: createConfig(),
+      rnVersion: '0.81.0',
+    });
+
+    const hostManager = readLibraryHostManager(androidDir);
+    expect(hostManager).toContain('import expo.modules.ExpoReactHostFactory');
+    expect(hostManager).not.toContain('loadReactNative(application)');
+  });
+
+  it('omits targetSdk for the vanilla template variant (AGP 9 rejects the field)', () => {
+    const androidDir = createAndroidDir();
+
+    createAndroidModule({
+      androidDir,
+      config: createConfig(),
+      rnVersion: '0.87.1',
+      templateVariant: 'vanilla',
+    });
+
+    // AGP 9 + RN 0.87 fails compilation with "Unresolved reference 'targetSdk'".
+    expect(readLibraryBuildGradle(androidDir)).not.toContain('targetSdk');
+  });
+
+  it('still emits targetSdk on the Expo variant when no Expo SDK major is given', () => {
+    const androidDir = createAndroidDir();
+
+    createAndroidModule({
+      androidDir,
+      config: createConfig(),
+      rnVersion: '0.87.1',
+    });
+
+    expect(readLibraryBuildGradle(androidDir)).toContain('targetSdk = 35');
+  });
+
+  it('emits targetSdk for Expo SDK versions below 58 when inherited from the app project', () => {
+    const androidDir = createAndroidDir();
+
+    createAndroidModule({
+      androidDir,
+      config: createConfig({
+        android: {
+          targetSdkVersion: undefined,
+        },
+      }),
+      rnVersion: '0.81.0',
+      expoMajor: 57,
+    });
+
+    expect(readLibraryBuildGradle(androidDir)).toContain(
+      'targetSdk = resolveRootProjectInt("targetSdkVersion")'
+    );
+  });
+
+  it('emits an explicit targetSdk override on Expo SDK versions below 58', () => {
+    const androidDir = createAndroidDir();
+
+    createAndroidModule({
+      androidDir,
+      config: createConfig({
+        android: {
+          targetSdkVersion: 37,
+        },
+      }),
+      rnVersion: '0.81.0',
+      expoMajor: 57,
+    });
+
+    expect(readLibraryBuildGradle(androidDir)).toContain('targetSdk = 37');
+  });
+
+  it('ignores targetSdk overrides on Expo SDK 58 and later', () => {
+    const androidDir = createAndroidDir();
+
+    createAndroidModule({
+      androidDir,
+      config: createConfig({
+        android: {
+          targetSdkVersion: 37,
+        },
+      }),
+      rnVersion: '0.85.3',
+      expoMajor: 58,
+    });
+
+    expect(readLibraryBuildGradle(androidDir)).not.toContain('targetSdk');
+  });
+
+  it('omits missingDimensionStrategy block when no strategies are defined', () => {
+    const androidDir = createAndroidDir();
+
+    createAndroidModule({
+      androidDir,
+      config: createConfig(),
+      rnVersion: '0.85.3',
+    });
+
+    const buildGradle = readLibraryBuildGradle(androidDir);
+    expect(buildGradle).toContain('missingDimensionStrategies = listOf()');
+    expect(buildGradle).not.toContain('missingDimensionStrategy(');
+  });
+
+  it('renders missingDimensionStrategies into the generated build.gradle', () => {
+    const androidDir = createAndroidDir();
+
+    createAndroidModule({
+      androidDir,
+      config: createConfig({
+        android: {
+          missingDimensionStrategies: ['type', 'alpha'],
+        },
+      }),
+      rnVersion: '0.85.3',
+    });
+
+    const buildGradle = readLibraryBuildGradle(androidDir);
+    expect(buildGradle).toContain(
+      'missingDimensionStrategies = listOf("type", "alpha")'
+    );
+    expect(buildGradle).toContain('missingDimensionStrategy("type", "alpha")');
+  });
+
+  it('omits the configurations block when no dependencies are excluded', () => {
+    const androidDir = createAndroidDir();
+
+    createAndroidModule({
+      androidDir,
+      config: createConfig(),
+      rnVersion: '0.85.3',
+    });
+
+    expect(readLibraryBuildGradle(androidDir)).not.toContain(
+      'configurations.all'
+    );
+  });
+
+  it('renders excludeDependencies as Gradle excludes in the generated build.gradle', () => {
+    const androidDir = createAndroidDir();
+
+    createAndroidModule({
+      androidDir,
+      config: createConfig({
+        android: {
+          excludeDependencies: [
+            'com.caverock:androidsvg',
+            'com.example.legacy',
+          ],
+        },
+      }),
+      rnVersion: '0.85.3',
+    });
+
+    expect(readLibraryBuildGradle(androidDir)).toContain(
+      [
+        'configurations.all {',
+        '    exclude(group = "com.caverock", module = "androidsvg")',
+        '    exclude(group = "com.example.legacy")',
+        '}',
+      ].join('\n')
+    );
+  });
+
+  it('rejects an excludeDependencies value that is not a list', () => {
+    const androidDir = createAndroidDir();
+
+    expect(() =>
+      createAndroidModule({
+        androidDir,
+        config: createConfig({
+          android: {
+            excludeDependencies:
+              'com.caverock:androidsvg' as unknown as string[],
+          },
+        }),
+        rnVersion: '0.85.3',
+      })
+    ).toThrow('android.excludeDependencies must be a list');
+  });
+
+  it.each([
+    'com.caverock:androidsvg:1.4',
+    ':androidsvg',
+    'com.caverock:',
+    'com.caverock:"androidsvg"',
+  ])('rejects the excludeDependencies entry %s', (entry) => {
+    const androidDir = createAndroidDir();
+
+    expect(() =>
+      createAndroidModule({
+        androidDir,
+        config: createConfig({ android: { excludeDependencies: [entry] } }),
+        rnVersion: '0.85.3',
+      })
+    ).toThrow(entry);
+  });
+
+  it('uses api dependencies and the installed React Native Hermes artifact for newer Expo projects', () => {
+    const androidDir = createAndroidDir();
+    const projectRoot = path.dirname(androidDir);
+    const versionPropertiesPath = path.join(
+      projectRoot,
+      'node_modules',
+      'react-native',
+      'sdks',
+      'hermes-engine',
+      'version.properties'
+    );
+
+    fs.mkdirSync(path.dirname(versionPropertiesPath), { recursive: true });
+    fs.writeFileSync(
+      versionPropertiesPath,
+      `HERMES_VERSION_NAME=0.16.0
+HERMES_V1_VERSION_NAME=250829098.0.10
+`,
+      'utf8'
+    );
+
+    createAndroidModule({
+      androidDir,
+      config: createConfig(),
+      rnVersion: '0.85.3',
+      projectRoot,
+    });
+
+    expect(readLibraryBuildGradle(androidDir)).toContain(
+      'api("com.facebook.react:react-android:0.85.3")'
+    );
+    expect(readLibraryBuildGradle(androidDir)).toContain(
+      'api("com.facebook.hermes:hermes-android:250829098.0.10")'
+    );
+    expect(readLibraryBuildGradle(androidDir)).not.toContain('compileOnlyApi');
+  });
+
+  it('keeps explicit SDK overrides when they are provided', () => {
+    const config = createConfig({
+      android: {
+        targetSdkVersion: 37,
+        compileSdkVersion: 38,
+      },
+    });
+
+    expect(resolveCompileSdkVersionExpression(config)).toBe('38');
+    expect(resolveTargetSdkVersionExpression(config)).toBe('37');
+  });
+
+  function createAndroidDir(): string {
+    const tempDirectory = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'react-native-brownfield-android-module-')
+    );
+    const androidDir = path.join(tempDirectory, 'android');
+
+    tempDirectories.push(tempDirectory);
+    fs.mkdirSync(androidDir, { recursive: true });
+
+    return androidDir;
+  }
+
+  function createConfig(
+    overrides: {
+      debug?: ResolvedBrownfieldPluginConfigWithAndroid['debug'];
+      ios?: ResolvedBrownfieldPluginConfigWithAndroid['ios'];
+      android?: Partial<ResolvedBrownfieldPluginConfigWithAndroid['android']>;
+    } = {}
+  ): ResolvedBrownfieldPluginConfigWithAndroid {
+    return {
+      debug: overrides.debug ?? false,
+      ios: overrides.ios ?? null,
+      android: {
+        moduleName: 'brownfieldlib',
+        packageName: 'com.example.brownfield',
+        minSdkVersion: 24,
+        targetSdkVersion: 35,
+        compileSdkVersion: 35,
+        groupId: 'com.example',
+        artifactId: 'brownfieldlib',
+        version: '1.0.0',
+        useLocalGradlePlugin: false,
+        useLocalMaven: false,
+        missingDimensionStrategies: [],
+        excludeDependencies: [],
+        ...(overrides.android ?? {}),
+      },
+    };
+  }
+
+  function writeAppManifest(androidDir: string, manifestContent: string): void {
+    const manifestDirectory = path.join(androidDir, 'app', 'src', 'main');
+
+    fs.mkdirSync(manifestDirectory, { recursive: true });
+    fs.writeFileSync(
+      path.join(manifestDirectory, 'AndroidManifest.xml'),
+      manifestContent,
+      'utf8'
+    );
+  }
+
+  function writeAppStrings(androidDir: string, stringsContent: string): void {
+    const stringsDirectory = path.join(
+      androidDir,
+      'app',
+      'src',
+      'main',
+      'res',
+      'values'
+    );
+
+    fs.mkdirSync(stringsDirectory, { recursive: true });
+    fs.writeFileSync(
+      path.join(stringsDirectory, 'strings.xml'),
+      stringsContent,
+      'utf8'
+    );
+  }
+
+  function readLibraryManifest(androidDir: string): string {
+    return fs.readFileSync(
+      path.join(
+        androidDir,
+        'brownfieldlib',
+        'src',
+        'main',
+        'AndroidManifest.xml'
+      ),
+      'utf8'
+    );
+  }
+
+  function readLibraryStrings(androidDir: string): string {
+    return fs.readFileSync(
+      path.join(
+        androidDir,
+        'brownfieldlib',
+        'src',
+        'main',
+        'res',
+        'values',
+        'strings.xml'
+      ),
+      'utf8'
+    );
+  }
+
+  function readLibraryBuildGradle(androidDir: string): string {
+    return fs.readFileSync(
+      path.join(androidDir, 'brownfieldlib', 'build.gradle.kts'),
+      'utf8'
+    );
+  }
+
+  function readLibraryHostManager(androidDir: string): string {
+    return fs.readFileSync(
+      path.join(
+        androidDir,
+        'brownfieldlib',
+        'src/main/java/com/example/brownfield/ReactNativeHostManager.kt'
+      ),
+      'utf8'
+    );
+  }
+});

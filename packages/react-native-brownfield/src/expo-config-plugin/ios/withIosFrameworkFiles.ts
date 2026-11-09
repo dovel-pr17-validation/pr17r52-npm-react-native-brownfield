@@ -1,0 +1,116 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
+import { withDangerousMod, type ConfigPlugin } from '@expo/config-plugins';
+
+import type {
+  RenderedTemplateFile,
+  ResolvedBrownfieldPluginConfigWithIos,
+} from '../types';
+import { Logger } from '../logging';
+import { renderTemplate } from '../template/engine';
+
+/**
+ * Returns rendered source files for the iOS framework
+ * @param ios The iOS Brownfield plugin configuration
+ * @returns The list of framework source files
+ */
+export function getFrameworkSourceFiles(
+  ios: ResolvedBrownfieldPluginConfigWithIos['ios'],
+  options?: {
+    /**
+     * Whether the packaged framework is expected to use the Expo host.
+     * This influences template selection for the generated framework sources.
+     * Note: expresses the same Expo-vs-vanilla axis as `templateVariant` in
+     * the Android helper (withAndroidModuleFiles.createAndroidModule), with
+     * opposite polarity: `false` here === 'vanilla' there.
+     */
+    useExpoHost?: boolean;
+    /**
+     * Vanilla template only: a React Native CLI app that uses Expo modules
+     * also needs `ensureExpoModulesProvider()` (the Expo template has it).
+     */
+    withExpoModules?: boolean;
+  }
+): RenderedTemplateFile[] {
+  const useExpoHost = options?.useExpoHost ?? true;
+  const vanillaInterface =
+    renderTemplate('ios', 'FrameworkInterface.vanilla.swift', {}) +
+    (options?.withExpoModules
+      ? renderTemplate('ios', 'ExpoModulesProviderExtension.swift', {})
+      : '');
+
+  return [
+    {
+      relativePath: `${ios.frameworkName}.swift`,
+      content: useExpoHost
+        ? renderTemplate('ios', 'FrameworkInterface.swift', {
+            '{{BUNDLE_IDENTIFIER}}': ios.bundleIdentifier,
+          })
+        : vanillaInterface,
+    },
+    {
+      relativePath: 'Info.plist',
+      content: renderTemplate('ios', 'Info.plist', {
+        '{{BUNDLE_IDENTIFIER}}': ios.bundleIdentifier,
+      }),
+    },
+  ];
+}
+
+/**
+ * Creates the iOS framework directory structure and files
+ * @param iosDir The root iOS directory path
+ * @param config The resolved Brownfield plugin configuration
+ */
+export function createIosFramework(
+  iosDir: string,
+  config: ResolvedBrownfieldPluginConfigWithIos,
+  options?: Parameters<typeof getFrameworkSourceFiles>[1]
+) {
+  const { ios } = config;
+  const frameworkDir = path.join(iosDir, ios.frameworkName);
+
+  const frameworkDirExists = fs.existsSync(frameworkDir);
+  Logger.logDebug(
+    frameworkDirExists
+      ? `Updating iOS framework files in: ${frameworkDir}`
+      : `Creating iOS framework in: ${frameworkDir}`
+  );
+
+  // create framework directory
+  if (!frameworkDirExists) {
+    fs.mkdirSync(frameworkDir, { recursive: true });
+
+    Logger.logDebug(`Created directory: ${frameworkDir}`);
+  }
+
+  // write files
+  for (const file of getFrameworkSourceFiles(ios, options)) {
+    const filePath = path.join(frameworkDir, file.relativePath);
+
+    fs.writeFileSync(filePath, file.content, 'utf8');
+  }
+
+  Logger.logDebug(
+    `iOS framework "${ios.frameworkName}" files created at ${frameworkDir}`
+  );
+}
+
+/**
+ * Dangerous mod that creates the iOS framework directory and files
+ */
+export const withIosFrameworkFiles: ConfigPlugin<
+  ResolvedBrownfieldPluginConfigWithIos
+> = (config, props) => {
+  return withDangerousMod(config, [
+    'ios',
+    async (dangerousConfig) => {
+      const iosDir = path.join(dangerousConfig.modRequest.projectRoot, 'ios');
+
+      createIosFramework(iosDir, props);
+
+      return dangerousConfig;
+    },
+  ]);
+};

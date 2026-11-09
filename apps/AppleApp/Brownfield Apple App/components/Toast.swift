@@ -1,0 +1,63 @@
+import SwiftUI
+
+private enum ToastE2E {
+    static var isEnabled: Bool {
+        ProcessInfo.processInfo.arguments.contains("-DetoxE2E")
+    }
+
+    static var visibleDuration: TimeInterval {
+        isEnabled ? 10 : 2
+    }
+}
+
+struct Toast: View {
+    let message: String
+    @Binding var isShowing: Bool
+
+    @State private var scale: CGFloat = 0.5
+    @State private var opacity: Double = 0.0
+
+    var body: some View {
+        if isShowing {
+            Text(message)
+                .foregroundColor(.white)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .background(Color.black.opacity(0.8))
+                .cornerRadius(25)
+                .multilineTextAlignment(.center)
+                .accessibilityIdentifier(E2eTestIds.appleAppPostMessageToast)
+                .scaleEffect(scale)
+                .opacity(opacity)
+                .onAppear {
+                    if ToastE2E.isEnabled {
+                        scale = 1.0
+                        opacity = 1.0
+                    } else {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+                            scale = 1.0
+                            opacity = 1.0
+                        }
+                    }
+
+                    DispatchQueue.main.asyncAfter(deadline: .now() + ToastE2E.visibleDuration) {
+                        if ToastE2E.isEnabled {
+                            scale = 1.0
+                            opacity = 0.0
+                        } else {
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                scale = 0.5
+                                opacity = 0.0
+                            }
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            isShowing = false
+                        }
+                    }
+                }
+                .transition(.scale.combined(with: .opacity))
+                .padding(.bottom, 50)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        }
+    }
+}

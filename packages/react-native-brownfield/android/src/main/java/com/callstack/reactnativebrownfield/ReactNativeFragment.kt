@@ -1,0 +1,248 @@
+package com.callstack.reactnativebrownfield
+
+import android.os.Bundle
+import android.util.Log
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import com.callstack.reactnativebrownfield.constants.ReactNativeFragmentArgNames
+import com.facebook.react.ReactFragment
+import com.facebook.react.ReactHost
+import com.facebook.react.bridge.Callback
+import com.facebook.react.bridge.WritableMap
+import com.facebook.react.modules.core.PermissionAwareActivity
+import com.facebook.react.modules.core.PermissionListener
+
+class ReactNativeFragment : ReactFragment(), PermissionAwareActivity {
+    private lateinit var permissionsCallback: Callback
+    private var permissionListener: PermissionListener? = null
+    private lateinit var moduleName: String
+    private var displaySession: BrownfieldDisplaySession? = null
+
+    /** Reattach after Fragment restoration; callbacks are intentionally not serialized. */
+    var onMetrics: OnDisplayMetrics? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        /**
+         * ReactFragment.onCreate will throw an exception if we do not provide arg_component_name as arguments.
+         * We silently catch this exception. The reason is we want to invoke the super<Fragment>.onCreate in
+         * ReactFragment. Then initialise the mReactDelegate with ReactDelegateWrapper instead of ReactDelegate.
+         *
+         * So we purposely force ReactFragment.onCreate to throw an exception, so that we can provide our own
+         * implementation for mReactDelegate: ReactDelegateWrapper
+         */
+        try {
+            super.onCreate(savedInstanceState)
+        } catch (e: IllegalStateException) {
+            Log.w(
+                "ReactNativeFragment",
+                "ReactFragment threw due to missing arg_component_name: ${e.message} - This is an expected behaviour."
+            )
+        }
+
+        moduleName = arguments?.getString(ReactNativeFragmentArgNames.ARG_MODULE_NAME)!!
+        this.reactDelegate =
+            ReactDelegateWrapper(
+                activity,
+                this.reactHost,
+                moduleName,
+                arguments?.getBundle(ReactNativeFragmentArgNames.ARG_LAUNCH_OPTIONS)
+            )
+    }
+
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View {
+        val args = arguments
+        // Only the measured factories set this argument. Plain fragments keep their props as is.
+        val isMeasured = args?.containsKey(ReactNativeFragmentArgNames.ARG_WAIT_FOR_FULL_DISPLAY) == true
+        val session = if (isMeasured) {
+            BrownfieldDisplaySession(
+                moduleName,
+                args!!.getBoolean(ReactNativeFragmentArgNames.ARG_WAIT_FOR_FULL_DISPLAY, false),
+                args.getBoolean(ReactNativeFragmentArgNames.ARG_COLLECT_THREAD_METRICS, false),
+                onMetrics
+            )
+        } else {
+            null
+        }
+        displaySession = session
+        val launchOptions = Bundle(
+            args?.getBundle(ReactNativeFragmentArgNames.ARG_LAUNCH_OPTIONS) ?: Bundle()
+        ).apply { session?.let { putString("brownfieldPresentationID", it.id) } }
+        this.reactDelegate = ReactDelegateWrapper(
+            activity, this.reactHost, moduleName, launchOptions
+        )
+        return ReactNativeBrownfield.shared.createViewInternal(
+            activity,
+            moduleName,
+            this.reactDelegate as ReactDelegateWrapper,
+            launchOptions,
+            viewLifecycleOwner,
+            session,
+            true
+        )
+    }
+
+    override val reactHost: ReactHost?
+        get() = ReactNativeBrownfield.shared.reactHost
+
+    override fun onResume() {
+        try {
+            super.onResume()
+        } catch (_: ClassCastException) {
+            (this.reactDelegate as ReactDelegateWrapper).onReactHostResume()
+        }
+        displaySession?.setResumed(true)
+    }
+
+    override fun onPause() {
+        displaySession?.cancel()
+        try {
+            super.onPause()
+        } catch (error: AssertionError) {
+            if (
+                error.message?.contains(
+                    "Pausing an activity that is not the current activity"
+                ) == true
+            ) {
+                Log.w(
+                    "ReactNativeFragment",
+                    "Ignoring stale onHostPause for ${activity?.javaClass?.simpleName}",
+                    error
+                )
+                return
+            }
+            throw error
+        }
+    }
+
+    override fun onDestroyView() {
+        displaySession?.cancel()
+        displaySession = null
+        super.onDestroyView()
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<String>,
+        grantResults: IntArray
+    ) {
+        permissionsCallback = Callback {
+            if (permissionListener != null) {
+                permissionListener?.onRequestPermissionsResult(
+                    requestCode,
+                    permissions,
+                    grantResults
+                )
+
+                permissionListener = null
+            }
+        }
+    }
+
+    override fun checkPermission(permission: String, pid: Int, uid: Int): Int {
+        return requireActivity().checkPermission(permission, pid, uid)
+    }
+
+    override fun checkSelfPermission(permission: String): Int {
+        return requireActivity().checkSelfPermission(permission)
+    }
+
+    override fun requestPermissions(
+        permissions: Array<String>,
+        requestCode: Int,
+        listener: PermissionListener?
+    ) {
+        permissionListener = listener
+        this.requestPermissions(permissions, requestCode)
+    }
+
+    companion object {
+        @JvmStatic
+        @JvmOverloads
+        fun createReactNativeFragment(
+            moduleName: String,
+            initialProps: Bundle? = null
+        ): ReactNativeFragment {
+            val fragment = ReactNativeFragment()
+            val args = Bundle()
+            args.putString(ReactNativeFragmentArgNames.ARG_MODULE_NAME, moduleName)
+            if (initialProps != null) {
+                args.putBundle(ReactNativeFragmentArgNames.ARG_LAUNCH_OPTIONS, initialProps)
+            }
+            fragment.arguments = args
+            return fragment
+        }
+
+        @JvmStatic
+        @JvmOverloads
+        fun createReactNativeFragment(
+            moduleName: String,
+            initialProps: Bundle?,
+            waitForFullDisplay: Boolean,
+            collectThreadMetrics: Boolean = false,
+            onMetrics: OnDisplayMetrics? = null
+        ): ReactNativeFragment {
+            return createReactNativeFragment(moduleName, initialProps).also { fragment ->
+                fragment.arguments?.putBoolean(
+                    ReactNativeFragmentArgNames.ARG_WAIT_FOR_FULL_DISPLAY, waitForFullDisplay
+                )
+                fragment.arguments?.putBoolean(
+                    ReactNativeFragmentArgNames.ARG_COLLECT_THREAD_METRICS, collectThreadMetrics
+                )
+                fragment.onMetrics = onMetrics
+            }
+        }
+
+        @JvmStatic
+        fun createReactNativeFragment(
+            moduleName: String,
+            initialProps: HashMap<String, *>
+        ): ReactNativeFragment {
+            return createReactNativeFragment(moduleName, PropsBundle.fromHashMap(initialProps))
+        }
+
+        @JvmStatic
+        @JvmOverloads
+        fun createReactNativeFragment(
+            moduleName: String,
+            initialProps: HashMap<String, *>,
+            waitForFullDisplay: Boolean,
+            collectThreadMetrics: Boolean = false,
+            onMetrics: OnDisplayMetrics? = null
+        ): ReactNativeFragment = createReactNativeFragment(
+            moduleName,
+            PropsBundle.fromHashMap(initialProps),
+            waitForFullDisplay,
+            collectThreadMetrics,
+            onMetrics
+        )
+
+        @JvmStatic
+        fun createReactNativeFragment(
+            moduleName: String,
+            initialProps: WritableMap
+        ): ReactNativeFragment {
+            return createReactNativeFragment(moduleName, initialProps.toHashMap())
+        }
+
+        @JvmStatic
+        @JvmOverloads
+        fun createReactNativeFragment(
+            moduleName: String,
+            initialProps: WritableMap,
+            waitForFullDisplay: Boolean,
+            collectThreadMetrics: Boolean = false,
+            onMetrics: OnDisplayMetrics? = null
+        ): ReactNativeFragment = createReactNativeFragment(
+            moduleName,
+            initialProps.toHashMap(),
+            waitForFullDisplay,
+            collectThreadMetrics,
+            onMetrics
+        )
+    }
+}

@@ -1,0 +1,99 @@
+import { PackageManagerTabs } from '@theme';
+
+# Quick Start
+
+<a
+  href="https://www.callstack.com/ebooks/incremental-react-native-adoption-in-native-apps?utm_campaign=brownfield&utm_source=github&utm_medium=referral&utm_content=react-native-brownfield"
+  align="center"
+>
+  <img
+    alt="Download a free copy of Incremental React Native adoption in native apps ebook"
+    src="https://github.com/user-attachments/assets/ba42bb29-1e7a-4683-80c5-2602afb1a7e6"
+  />
+</a>
+
+## Installation
+
+The React Native Brownfield library is intended to be installed in a **React Native app** that is later consumed as a **framework artifact** by your native iOS or Android app.
+
+:::tip React Native CLI app?
+If your app uses the React Native Community CLI, one command performs this installation **and** sets up the packaging targets:
+
+```bash
+npm create @callstack/react-native-brownfield@latest
+```
+
+See [React Native CLI Integration](/docs/getting-started/rnc-cli) for what it changes and how to re-run it safely. The manual steps below apply to any setup, including Expo (see [Expo Integration](/docs/getting-started/expo)).
+:::
+
+In your React Native project run:
+
+<PackageManagerTabs command="install @callstack/react-native-brownfield" />
+
+### iOS Setup
+
+Run **`pod install`** in your iOS directory.
+
+### Android Setup
+
+The library will be **automatically linked** via autolinking.
+
+## What is the Brownfield CLI?
+
+The `@callstack/react-native-brownfield` package includes a [**built-in CLI**](/docs/cli/introduction) that handles the complex process of packaging your React Native app into native framework artifacts.
+
+### Why do you need it?
+
+Integrating React Native into an existing native app requires packaging your JavaScript code and native dependencies into formats that native apps can consume:
+
+- **iOS** → **XCFramework** (`.xcframework`)
+- **Android** → **AAR** (`.aar`)
+
+#### Without the CLI
+
+Without the CLI, this process involves:
+
+- Manually configuring build scripts
+- Bundling JavaScript with the correct settings
+- Compiling native code for multiple architectures
+- Handling Hermes bytecode compilation
+- Managing native dependencies and linking
+
+The **Brownfield CLI automates all of this** with simple commands.
+
+### What does it do?
+
+| Command               | Platform | Output                                                                                               |
+| --------------------- | -------- | ---------------------------------------------------------------------------------------------------- |
+| **`package:ios`**     | iOS      | Creates an XCFramework containing your React Native app, Hermes runtime, and all native dependencies |
+| **`package:android`** | Android  | Creates a Fat-AAR containing your React Native app bundled with all native dependencies              |
+| **`publish:android`** | Android  | Publishes the AAR to your local Maven repository for easy consumption                                |
+
+### How does it make integration easier?
+
+1. **No Node.js in your native app** - Your native iOS/Android app doesn't need Node.js, npm, or any JavaScript tooling installed
+2. **Single artifact** - All React Native code and dependencies are bundled into one file
+3. **Debug & Release support** - The CLI handles both configurations automatically
+4. **Architecture support** - Builds for all required CPU architectures (arm64, x86_64, etc.)
+
+## Next Steps
+
+Now that you have the library installed, follow the platform-specific guides to package your React Native app and integrate it with your native app:
+
+- [**React Native CLI Integration**](/docs/getting-started/rnc-cli) - Set up packaging targets automatically in a Community CLI app
+- [**iOS Integration**](/docs/getting-started/ios) - Package as XCFramework and integrate with your iOS app
+- [**Android Integration**](/docs/getting-started/android) - Package as AAR and integrate with your Android app
+
+## API Reference
+
+For detailed API documentation, see:
+
+- [Configuration files](/docs/api-reference/configuration)
+- [Swift API](/docs/api-reference/react-native-brownfield/swift)
+- [Objective-C API](/docs/api-reference/react-native-brownfield/objective-c)
+- [Kotlin API](/docs/api-reference/react-native-brownfield/kotlin)
+- [Java API](/docs/api-reference/react-native-brownfield/java)
+
+## Guidelines
+
+Read the [**Guidelines**](/docs/guides/guidelines) for best practices on integrating React Native into your native app.

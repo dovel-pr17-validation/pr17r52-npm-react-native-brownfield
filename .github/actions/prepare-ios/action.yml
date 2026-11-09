@@ -1,0 +1,45 @@
+name: Prepare iOS environment
+description: Prepare iOS environment and set up the project
+
+inputs:
+  run-yarn-build:
+    description: 'Whether to run yarn build'
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: '::group:: Xcode & Ruby'
+      run: echo "::group::Xcode & Ruby"
+      shell: bash
+
+    - name: Use appropriate Xcode version
+      uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+      with:
+        xcode-version: '26.6'
+
+    - name: Setup Ruby
+      uses: ruby/setup-ruby@9eb537ca036ebaed86729dcb9309076e4c5c3b74 # v1.314.0
+      with:
+        ruby-version: '3.2'
+        bundler-cache: true
+
+    - name: '::endgroup:: Xcode & Ruby'
+      run: echo "::endgroup::"
+      shell: bash
+
+    - name: '::group:: Build packages'
+      if: inputs.run-yarn-build == 'true'
+      run: echo "::group::Build packages"
+      shell: bash
+
+    - name: Build packages
+      if: inputs.run-yarn-build == 'true'
+      run: yarn build
+      shell: bash
+
+    - name: '::endgroup:: Build packages'
+      if: inputs.run-yarn-build == 'true'
+      run: echo "::endgroup::"
+      shell: bash

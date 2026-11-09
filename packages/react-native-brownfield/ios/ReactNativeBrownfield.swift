@@ -1,0 +1,345 @@
+import UIKit
+
+#if canImport(Expo)
+internal import Expo
+#endif
+
+/**
+ * JS bundle timings from React Native's performance logger.
+ *
+ * - `jsBundleLoadTime` is `RCTPLScriptDownload` (Metro HTTP in Debug, file read in Release).
+ * - `jsBundleEvaluationTime` is `RCTPLScriptExecution`.
+ *
+ * A tag field is `nil` when the tag never completed (failed load, logger missing, or
+ * bridgeless React Native below 0.87).
+ */
+@objc public class JSBundleTimings: NSObject {
+  @objc public let jsBundleLoadTime: NSNumber?
+  @objc public let jsBundleEvaluationTime: NSNumber?
+  @objc public let timeline: [[String: Any]]
+
+  @objc public init(jsBundleLoadTime: NSNumber?, jsBundleEvaluationTime: NSNumber?) {
+    self.timeline = []
+    self.jsBundleLoadTime = jsBundleLoadTime
+    self.jsBundleEvaluationTime = jsBundleEvaluationTime
+    super.init()
+  }
+
+  @objc public init(jsBundleLoadTime: NSNumber?, jsBundleEvaluationTime: NSNumber?, timeline: [[String: Any]]) {
+    self.jsBundleLoadTime = jsBundleLoadTime
+    self.jsBundleEvaluationTime = jsBundleEvaluationTime
+    self.timeline = timeline
+    super.init()
+  }
+}
+
+@objc public class ReactNativeBrownfield: NSObject {
+  public static let shared = ReactNativeBrownfield()
+
+  /**
+   * Path to JavaScript root.
+   * Default value: "index" for bare React Native, ".expo/.virtual-metro-entry" when built with Expo.
+   */
+  @objc public var entryFile: String = {
+    #if canImport(Expo)
+    return ".expo/.virtual-metro-entry"
+    #else
+    return "index"
+    #endif
+  }() {
+    didSet {
+      #if canImport(Expo)
+      ExpoHostRuntime.shared.entryFile = entryFile
+      #else
+      ReactNativeHostRuntime.shared.entryFile = entryFile
+      #endif
+    }
+  }
+
+  /**
+   * Path to JavaScript bundle file.
+   * Default value: "main.jsbundle"
+   */
+  @objc public var bundlePath: String = "main.jsbundle" {
+    didSet {
+      #if canImport(Expo)
+      ExpoHostRuntime.shared.bundlePath = bundlePath
+      #else
+      ReactNativeHostRuntime.shared.bundlePath = bundlePath
+      #endif
+    }
+  }
+
+  /**
+   * Bundle instance to lookup the JavaScript bundle.
+   * Default value: Bundle.main
+   */
+  @objc public var bundle: Bundle = .main {
+    didSet {
+      #if canImport(Expo)
+      ExpoHostRuntime.shared.bundle = bundle
+      #else
+      ReactNativeHostRuntime.shared.bundle = bundle
+      #endif
+    }
+  }
+
+  /**
+   * Use the embedded JavaScript bundle as a Debug fallback when Metro is unavailable.
+   * Default value: false
+   */
+  @objc public var preferEmbeddedBundleInDebug: Bool = false {
+    didSet {
+      #if canImport(Expo)
+      ExpoHostRuntime.shared.preferEmbeddedBundleInDebug = preferEmbeddedBundleInDebug
+      #else
+      ReactNativeHostRuntime.shared.preferEmbeddedBundleInDebug = preferEmbeddedBundleInDebug
+      #endif
+    }
+  }
+
+  /**
+   * Dynamic bundle URL provider called on every bundle load.
+   * When set, this overrides the default bundleURL() behavior in the delegate.
+   * Returns a URL to load a custom bundle, or nil to use default behavior.
+   * Default value: nil
+   */
+  @objc public var bundleURLOverride: (() -> URL?)? = nil {
+    didSet {
+      #if canImport(Expo)
+      ExpoHostRuntime.shared.bundleURLOverride = bundleURLOverride
+      #else
+      ReactNativeHostRuntime.shared.bundleURLOverride = bundleURLOverride
+      #endif
+    }
+  }
+
+  /**
+   * Starts React Native with default parameters.
+   */
+  @objc public func startReactNative() {
+    #if canImport(Expo)
+    ExpoHostRuntime.shared.startReactNative()
+    #else
+    ReactNativeHostRuntime.shared.startReactNative()
+    #endif
+  }
+
+  /**
+   * Stops React Native.
+   */
+  @objc public func stopReactNative() {
+    NotificationCenter.default.post(name: Notification.Name("BrownfieldPerformanceStop"), object: nil)
+    #if canImport(Expo)
+    ExpoHostRuntime.shared.stopReactNative()
+    #else
+    ReactNativeHostRuntime.shared.stopReactNative()
+    #endif
+  }
+
+  @objc public func view(
+    moduleName: String,
+    initialProps: [AnyHashable: Any]?,
+    launchOptions: [AnyHashable: Any]? = nil
+  ) -> UIView? {
+    makeView(moduleName: moduleName, initialProps: initialProps, launchOptions: launchOptions,
+             session: nil, isHostVisible: nil)
+  }
+
+  /// Creates a measured presentation. The completion receives one immutable snapshot on main.
+  /// Opt in to wait for JS `markFullyDisplayed(brownfieldPresentationID)`.
+  /// Thread sampling requires both collectThreadMetrics and an onMetrics callback.
+  @objc public func view(
+    moduleName: String,
+    initialProps: [AnyHashable: Any]?,
+    launchOptions: [AnyHashable: Any]? = nil,
+    waitForFullDisplay: Bool = false,
+    collectThreadMetrics: Bool = false,
+    onMetrics: ((BrownfieldDisplayMetrics) -> Void)?
+  ) -> UIView? {
+    let session = BrownfieldDisplaySession(moduleName: moduleName,
+      waitForFullDisplay: waitForFullDisplay, collectThreadMetrics: collectThreadMetrics,
+      callback: onMetrics)
+    return makeView(moduleName: moduleName, initialProps: initialProps,
+                    launchOptions: launchOptions, session: session, isHostVisible: nil)
+  }
+
+  /// Only measured presentations get a session. Without one, `initialProps` pass through as is.
+  /// `isHostVisible` is set by `ReactNativeViewController`, which reports appearance itself.
+  internal func makeView(moduleName: String, initialProps: [AnyHashable: Any]?,
+                        launchOptions: [AnyHashable: Any]?, session: BrownfieldDisplaySession?,
+                        isHostVisible: (() -> Bool)?) -> UIView? {
+    var props = initialProps
+    if let session {
+      props = (props ?? [:]).merging(["brownfieldPresentationID": session.id]) { $1 }
+    }
+    // The probe goes into the React Native root, not into a placeholder, so initial display
+    // can't complete before the root exists.
+    let attachProbe: (UIView?) -> Void = { rootView in
+      guard let session else { return }
+      guard let rootView else { session.cancel(); return }
+      let probe = BrownfieldAppearanceProbe(session: session)
+      probe.isHostVisible = isHostVisible
+      session.hasRootView = true
+      rootView.addSubview(probe)
+    }
+    #if canImport(Expo)
+    let view = ExpoHostRuntime.shared.view(moduleName: moduleName, initialProps: props,
+                                           launchOptions: launchOptions, onRootView: attachProbe)
+    #else
+    let view = ReactNativeHostRuntime.shared.view(moduleName: moduleName, initialProps: props,
+                                                  launchOptions: launchOptions)
+    attachProbe(view)
+    #endif
+    if view == nil { session?.cancel() }
+    return view
+  }
+
+  /**
+   * Mirrors the host runtime app delegate API, forwarding to Expo or bare React Native as appropriate.
+   */
+  @objc public func application(
+    _ application: UIApplication,
+    didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+  ) -> Bool {
+    #if canImport(Expo)
+    return ExpoHostRuntime.shared.application(
+      application,
+      didFinishLaunchingWithOptions: launchOptions
+    )
+    #else
+    return ReactNativeHostRuntime.shared.application(
+      application,
+      didFinishLaunchingWithOptions: launchOptions
+    )
+    #endif
+  }
+
+  @objc public func application(
+    _ application: UIApplication,
+    willFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+  ) -> Bool {
+    #if canImport(Expo)
+      return ExpoHostRuntime.shared.application(
+        application,
+        willFinishLaunchingWithOptions: launchOptions
+      )
+    #else
+      return ReactNativeHostRuntime.shared.application(
+        application,
+        willFinishLaunchingWithOptions: launchOptions
+      )
+    #endif
+  }
+
+  @objc public func application(
+    _ app: UIApplication,
+    open url: URL,
+    options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+  ) -> Bool {
+    #if canImport(Expo)
+    return ExpoHostRuntime.shared.application(app, open: url, options: options)
+    #else
+    return ReactNativeHostRuntime.shared.application(app, open: url, options: options)
+    #endif
+  }
+
+  // Universal Links
+  @objc public func application(
+    _ application: UIApplication,
+    continue userActivity: NSUserActivity,
+    restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void
+  ) -> Bool {
+    #if canImport(Expo)
+    return ExpoHostRuntime.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
+    #else
+    return ReactNativeHostRuntime.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
+    #endif
+  }
+
+  /**
+   * Starts React Native with optional callback when bundle is loaded.
+   *
+   * @param onBundleLoaded Optional callback invoked on the main thread after the JS bundle is
+   *   fully loaded. It receives `JSBundleTimings`. It runs in the next turn of the main run loop
+   *   when the bundle is already loaded. A new callback replaces the callback that waits.
+   */
+  @objc public func startReactNative(onBundleLoaded: ((JSBundleTimings) -> Void)?) {
+    #if canImport(Expo)
+    ExpoHostRuntime.shared.startReactNative(onBundleLoaded: onBundleLoaded)
+    #else
+    ReactNativeHostRuntime.shared.startReactNative(onBundleLoaded: onBundleLoaded)
+    #endif
+  }
+
+  /**
+   * Starts React Native, and optionally loads the JavaScript bundle immediately. Without a
+   * preload, React Native loads the bundle when it creates the first React Native view. On
+   * Android, `ReactNativeBrownfield.initialize` does the same operation.
+   *
+   * @param launchOptions The launch options for the React Host. Only the call that creates the
+   *   host reads these options. This method keeps the options. A view that creates the host later
+   *   uses them, also if this method cannot create the host. Options that you give to `view` win
+   *   over these options.
+   * @param preloadBundle `true` loads and evaluates the JavaScript bundle now. A preload adds
+   *   work to the section of the caller, but the first React Native screen appears faster.
+   * @param onBundleLoaded An optional callback, with the rules of `startReactNative`.
+   */
+  @objc public func startReactNative(
+    launchOptions: [AnyHashable: Any]?,
+    preloadBundle: Bool,
+    onBundleLoaded: ((JSBundleTimings) -> Void)?
+  ) {
+    #if canImport(Expo)
+    ExpoHostRuntime.shared.startReactNative(
+      launchOptions: launchOptions,
+      preloadBundle: preloadBundle,
+      onBundleLoaded: onBundleLoaded
+    )
+    #else
+    ReactNativeHostRuntime.shared.startReactNative(
+      launchOptions: launchOptions,
+      preloadBundle: preloadBundle,
+      onBundleLoaded: onBundleLoaded
+    )
+    #endif
+  }
+
+  /**
+   * Send a serialized JSON message to the React Native JS application.
+   * The message is delivered as a `brownfieldMessage` DeviceEventEmitter event.
+   *
+   * @param message - The serialized JSON message to send to the React Native JS application.
+   * @example
+   * let json = "{\"text\":\"\(text)\"}"
+   * ReactNativeBrownfield.shared.postMessage(json)
+   */
+  @objc public func postMessage(_ message: String) {
+    let userInfo: [String: Any] = ["message": message]
+    DispatchQueue.main.async {
+      NotificationCenter.default.post(
+        name: Notification.Name.brownfieldMessageToJS,
+        object: nil,
+        userInfo: userInfo
+      )
+    }
+  }
+
+  /**
+   * Subscribe to messages sent from JavaScript via `ReactNativeBrownfield.postMessage()`.
+   *
+   * @param handler Called with the raw JSON string sent from JS.
+   * @return An observer token. Pass it to `NotificationCenter.default.removeObserver(_:)` to unsubscribe.
+   */
+  @objc public func onMessage(_ handler: @escaping (String) -> Void) -> NSObjectProtocol {
+    return NotificationCenter.default.addObserver(
+      forName: Notification.Name.brownfieldMessageFromJS,
+      object: nil,
+      queue: .main
+    ) { notification in
+      if let message = notification.userInfo?["message"] as? String {
+        handler(message)
+      }
+    }
+  }
+}

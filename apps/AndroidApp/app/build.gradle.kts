@@ -1,0 +1,99 @@
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.compose)
+}
+
+configurations.all {
+    resolutionStrategy {
+        // force Gradle to always check for new versions of changing modules
+        cacheChangingModulesFor(0, "seconds")
+        cacheDynamicVersionsFor(0, "seconds")
+    }
+}
+
+android {
+    namespace = "com.callstack.brownfield.android.example"
+    compileSdk {
+        version = release(37)
+    }
+
+    defaultConfig {
+        applicationId = "com.callstack.brownfield.android.example"
+        minSdk = 24
+        targetSdk = 36
+        versionCode = 1
+        versionName = "1.0"
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testBuildType = System.getProperty("testBuildType", "debug")
+        missingDimensionStrategy("env", "dev")
+    }
+
+    flavorDimensions += "app"
+    productFlavors {
+        create("expo57") {
+            dimension = "app"
+        }
+        create("expo58") {
+            dimension = "app"
+        }
+        create("expopreview") {
+            dimension = "app"
+        }
+        create("vanilla") {
+            dimension = "app"
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            isDebuggable = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+            signingConfig = signingConfigs.getByName("debug")
+        }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    buildFeatures {
+        compose = true
+    }
+}
+
+dependencies {
+    implementation(libs.gson)
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.material)
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.ui.graphics)
+    implementation(libs.androidx.compose.ui.tooling.preview)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.appcompat)
+    add("expo57Implementation", libs.brownfieldlib.expo57)
+    add("expo58Implementation", libs.brownfieldlib.expo58)
+    add("expopreviewImplementation", libs.brownfieldlib.expopreview)
+    add("vanillaImplementation", libs.brownfieldlib.vanilla)
+
+    implementation(libs.androidx.fragment.compose)
+    testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation("com.wix:detox:+")
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    // Compose ↔ Espresso bridge (ComposeIdlingResource / EspressoLink) for Detox.
+    androidTestImplementation("androidx.compose.ui:ui-test")
+    debugImplementation(libs.androidx.compose.ui.tooling)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
+    androidTestImplementation(libs.androidx.compose.ui.test.manifest)
+    // Release Detox E2E: expose Compose semantics to Espresso (debugImplementation is not on release APKs).
+    releaseImplementation(libs.androidx.compose.ui.test.manifest)
+}

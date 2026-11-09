@@ -1,0 +1,86 @@
+import {
+  withAppBuildGradle,
+  withProjectBuildGradle,
+  withSettingsGradle,
+  withFinalizedMod,
+  type ConfigPlugin,
+} from '@expo/config-plugins';
+
+import {
+  modifyAppBuildGradleMissingDimensionStrategy,
+  modifyRootBuildGradle,
+  modifySettingsGradle,
+} from './utils/gradleHelpers';
+import {
+  syncAndroidModuleExpoUpdatesFromAppFiles,
+  withAndroidModuleFiles,
+} from './withAndroidModuleFiles';
+import type { ResolvedBrownfieldPluginConfigWithAndroid } from '../types';
+
+/**
+ * Android Config Plugin for integration with @callstack/react-native-brownfield.
+ *
+ * This plugin:
+ * 1. Creates a new Android Library module for the Brownfield AAR
+ * 3. Modifies settings.gradle to include the new module
+ * 4. Modifies root build.gradle to add Brownfield Gradle plugin
+ * 5. Generates the ReactNativeHostManager class inside the module
+ */
+export const withBrownfieldAndroid: ConfigPlugin<
+  ResolvedBrownfieldPluginConfigWithAndroid
+> = (config, props) => {
+  const androidConfig = props.android;
+
+  // Step 1: modify root build.gradle to add Brownfield Gradle plugin dependency
+  config = withProjectBuildGradle(config, (gradleConfig) => {
+    gradleConfig.modResults.contents = modifyRootBuildGradle(
+      gradleConfig.modResults.contents,
+      {
+        useLocalGradlePlugin: androidConfig.useLocalGradlePlugin,
+        useLocalMaven: androidConfig.useLocalMaven,
+      }
+    );
+
+    return gradleConfig;
+  });
+
+  // Step 2: modify app build.gradle to add missingDimensionStrategy
+  config = withAppBuildGradle(config, (gradleConfig) => {
+    gradleConfig.modResults.contents =
+      modifyAppBuildGradleMissingDimensionStrategy(
+        gradleConfig.modResults.contents,
+        androidConfig.missingDimensionStrategies
+      );
+
+    return gradleConfig;
+  });
+
+  // Step 3: modify settings.gradle to include the new module
+  config = withSettingsGradle(config, (settingsConfig) => {
+    settingsConfig.modResults.contents = modifySettingsGradle(
+      settingsConfig.modResults.contents,
+      androidConfig.moduleName,
+      { useLocalGradlePlugin: androidConfig.useLocalGradlePlugin }
+    );
+
+    return settingsConfig;
+  });
+
+  // Step 4: create the Android module files using dangerous mod
+  config = withAndroidModuleFiles(config, props);
+
+  // Step 5: sync module metadata after Expo writes all Android files
+  config = withFinalizedMod(config, [
+    'android',
+    async (finalizedConfig) => {
+      syncAndroidModuleExpoUpdatesFromAppFiles({
+        androidDir: finalizedConfig.modRequest.platformProjectRoot,
+        config: props,
+      });
+
+      return finalizedConfig;
+    },
+  ]);
+
+  return config;
+};

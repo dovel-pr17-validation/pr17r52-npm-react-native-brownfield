@@ -1,0 +1,518 @@
+import { PackageManagerTabs, Tabs, Tab } from '@theme';
+
+# Android Integration
+
+This guide walks you through packaging your React Native app as an **AAR** and integrating it into your native Android app.
+
+:::tip Community CLI apps can skip steps 1-7
+For a React Native Community CLI app, `npm create @callstack/react-native-brownfield@latest` creates the library module, wires the Gradle plugin and the React Native dependencies, writes the host manager, adds the build config fields and Maven publishing, and generates `brownfield.config.json`. See [React Native CLI Integration](/docs/getting-started/rnc-cli) and continue from step 8.
+:::
+
+## Prerequisites
+
+- React Native app with `@callstack/react-native-brownfield` installed
+- Android Studio installed
+- An existing Android app (or create a new one)
+
+## 1. Create an Android Library Module
+
+1. Open your React Native project's `android` folder in Android Studio
+2. Go to **File → New Module → Android Library**
+
+![Create Android Library Module](/images/create-module.png)
+
+3. Name the module (e.g., `reactnativeapp`)
+4. After sync completes, verify by running `./gradlew assembleRelease`
+
+:::note Module Naming
+This guide uses module name `reactnativeapp` in `com.yourapp`. Adjust to your preferences and update code snippets accordingly.
+:::
+
+## 2. Set Up the AAR Gradle Plugin
+
+Add the **brownfield Gradle plugin** to `android/build.gradle`:
+
+```groovy
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath("com.callstack.react:brownfield-gradle-plugin:<latest-version>")
+    }
+}
+```
+
+Add the plugin to `reactnativeapp/build.gradle.kts`:
+
+```kotlin
+plugins {
+    id("com.android.library")
+    id("org.jetbrains.kotlin.android")
+    id("com.facebook.react")
+    id("com.callstack.react.brownfield")
+}
+```
+
+Add **autolinking** setup:
+
+```kotlin
+react {
+    autolinkLibrariesWithApp()
+}
+```
+
+### Advanced: Load the Plugin from Node Modules
+
+Use the source version only when you need to patch the Brownfield Gradle Plugin locally, for example with `patch-package`.
+
+Add the included build to the top of `android/settings.gradle.kts`:
+
+```kotlin
+pluginManagement {
+    includeBuild(
+        File(
+            providers.exec {
+                workingDir(rootDir)
+                commandLine("node", "--print", "require.resolve('@callstack/react-native-brownfield/package.json')")
+            }.standardOutput.asText.get().trim()
+        ).parentFile.resolve("gradle-plugin/brownfield")
+    )
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+```
+
+For standard React Native app layouts, this shorter form also works:
+
+```kotlin
+pluginManagement {
+    includeBuild("../node_modules/@callstack/react-native-brownfield/gradle-plugin/brownfield")
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+```
+
+Then remove the Maven classpath dependency from `android/build.gradle`:
+
+```diff
+- classpath("com.callstack.react:brownfield-gradle-plugin:<version>")
+```
+
+Keep applying the plugin in your brownfield Android library module as usual:
+
+```kotlin
+plugins {
+    id("com.callstack.react.brownfield")
+}
+```
+
+## 3. Add React Native Dependencies
+
+Add the code below to `reactnativeapp/build.gradle.kts` based on your React Native version.
+
+<Tabs>
+  <Tab label="0.85.0">
+  ```kotlin
+    dependencies {
+        // Match your version of React Native below
+        api("com.facebook.react:react-android:0.85.0")
+
+        // Use the below for Hermes V1
+        api("com.facebook.hermes:hermes-android:250829098.0.10")
+        // Alternatively, use the below for legacy Hermes
+        // api("com.facebook.hermes:hermes-android:0.16.0")
+    }
+    ```
+    </Tab>
+
+  <Tab label="0.84.1">
+  ```kotlin
+    dependencies {
+        // Match your version of React Native below
+        api("com.facebook.react:react-android:0.84.1")
+
+        // Use the below for Hermes V1
+        api("com.facebook.hermes:hermes-android:250829098.0.9")
+        // Alternatively, use the below for legacy Hermes
+        // api("com.facebook.hermes:hermes-android:0.15.1")
+    }
+    ```
+    </Tab>
+
+  <Tab label="0.84.0">
+  ```kotlin
+    dependencies {
+        // Match your version of React Native below
+        api("com.facebook.react:react-android:0.84.0")
+
+        // Use the below for Hermes V1
+        api("com.facebook.hermes:hermes-android:250829098.0.7")
+        // Alternatively, use the below for legacy Hermes
+        // api("com.facebook.hermes:hermes-android:0.14.1")
+    }
+    ```
+    </Tab>
+
+  <Tab label="0.83.2 - 0.83.4">
+  ```kotlin
+    dependencies {
+        // Match your version of React Native below
+        api("com.facebook.react:react-android:<RN_VERSION>")
+        // e.g., for RN 0.83.4
+        // api("com.facebook.react:react-android:0.83.4")
+
+        // Use the below for Hermes V1
+        api("com.facebook.hermes:hermes-android:250829098.0.4")
+        // Alternatively, use the below for legacy Hermes
+        // api("com.facebook.hermes:hermes-android:0.14.1")
+    }
+    ```
+    </Tab>
+
+  <Tab label="0.83.1">
+  ```kotlin
+    dependencies {
+        // Match your version of React Native below
+        api("com.facebook.react:react-android:0.83.1")
+
+        // Use the below for Hermes V1
+        api("com.facebook.hermes:hermes-android:250829098.0.4")
+        // Alternatively, use the below for legacy Hermes
+        // api("com.facebook.hermes:hermes-android:0.14.0")
+    }
+    ```
+    </Tab>
+
+  <Tab label="0.83.0">
+  ```kotlin
+    dependencies {
+        // Match your version of React Native below
+        api("com.facebook.react:react-android:0.83.0")
+
+        // Use the below for Hermes V1
+        api("com.facebook.hermes:hermes-android:250829098.0.4")
+        // Alternatively, use the below for legacy Hermes
+        // api("com.facebook.hermes:hermes-android:0.14.0")
+    }
+    ```
+    </Tab>
+
+  <Tab label="0.82.x and below">
+  ```kotlin
+    dependencies {
+        // Match your version of React Native below
+        api("com.facebook.react:react-android:<RN_VERSION>")
+        api("com.facebook.react:hermes-android:<RN_VERSION>")
+
+        // e.g., for RN 0.82.0
+        // api("com.facebook.react:react-android:0.82.0")
+        // api("com.facebook.react:hermes-android:0.82.0")
+    }
+    ```
+    </Tab>
+
+</Tabs>
+
+:::warning Important
+Make sure the **React Native version** matches the version in your project's `package.json`.
+:::
+
+## 4. Create React Native Host Manager
+
+Create **`ReactNativeHostManager.kt`** in your `reactnativeapp` module:
+
+```kotlin
+package com.yourapp.reactnativeapp
+
+import android.app.Application
+import com.callstack.reactnativebrownfield.OnJSBundleLoaded
+import com.callstack.reactnativebrownfield.ReactNativeBrownfield
+import com.facebook.react.PackageList
+
+object ReactNativeHostManager {
+    fun initialize(application: Application, onJSBundleLoaded: OnJSBundleLoaded? = null) {
+        val packageList = PackageList(application).packages
+
+        ReactNativeBrownfield.initialize(application, packageList, onJSBundleLoaded)
+    }
+}
+```
+
+:::warning Important
+The `ReactNativeBrownfield::initialize(Application, ReactHost, OnJSBundleLoaded? = null)` function variant is deprecated and shouldn't be used any more. It will be removed in a future release.
+
+`OnJSBundleLoaded` receives `JSBundleTimings` on the main thread. Its nullable
+`jsBundleLoadTime`, `jsBundleEvaluationTime`, and sorted `timeline` fields describe
+completed startup intervals. This replaces the Boolean callback argument used by
+earlier releases.
+This version is unsafe because passing a pre-constructed `ReactHost` can trigger `SoLoader` (e.g., via `ExpoReactHostFactory`) before native libraries are fully loaded, leading to potential runtime crashes.
+:::
+
+## 5. Add Build Config Fields
+
+Add to `reactnativeapp/build.gradle.kts`:
+
+```kotlin
+android {
+    defaultConfig {
+        minSdk = 24
+
+        buildConfigField("boolean", "IS_EDGE_TO_EDGE_ENABLED", properties["edgeToEdgeEnabled"].toString())
+        buildConfigField("boolean", "IS_NEW_ARCHITECTURE_ENABLED", properties["newArchEnabled"].toString())
+        buildConfigField("boolean", "IS_HERMES_ENABLED", properties["hermesEnabled"].toString())
+    }
+
+    publishing {
+        multipleVariants {
+            allVariants()
+        }
+    }
+}
+```
+
+## 6. Configure Maven Publishing
+
+Add the Maven publish plugin to `reactnativeapp/build.gradle.kts`:
+
+```kotlin
+plugins {
+    // ... existing plugins
+    `maven-publish`
+}
+```
+
+Add publishing configuration:
+
+```kotlin
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+
+publishing {
+    publications {
+        create<MavenPublication>("mavenAar") {
+            groupId = "com.yourapp"
+            artifactId = "reactnativeapp"
+            version = "0.0.1-local"
+            afterEvaluate {
+                from(components.getByName("default"))
+            }
+
+            pom {
+                withXml {
+                    val dependenciesNode = (asNode().get("dependencies") as groovy.util.NodeList).first() as groovy.util.Node
+                    dependenciesNode.children()
+                        .filterIsInstance<groovy.util.Node>()
+                        .filter { (it.get("groupId") as groovy.util.NodeList).text() == rootProject.name }
+                        .forEach { dependenciesNode.remove(it) }
+                }
+            }
+        }
+    }
+
+    repositories {
+        mavenLocal()
+    }
+}
+```
+
+Skip this task-registration block entirely — `experimentalIncludeTransitiveDependencies` (described below) is enabled by default and already does this for you.
+
+```kotlin
+val moduleBuildDir: Directory = layout.buildDirectory.get()
+
+tasks.register("removeDependenciesFromModuleFile") {
+    doLast {
+        file("$moduleBuildDir/publications/mavenAar/module.json").run {
+            val json = inputStream().use { JsonSlurper().parse(it) as Map<String, Any> }
+            (json["variants"] as? List<MutableMap<String, Any>>)?.forEach { variant ->
+                (variant["dependencies"] as? MutableList<Map<String, Any>>)?.removeAll { it["group"] == rootProject.name }
+            }
+            writer().use { it.write(JsonOutput.prettyPrint(JsonOutput.toJson(json))) }
+        }
+    }
+}
+
+tasks.named("generateMetadataFileForMavenAarPublication") {
+   finalizedBy("removeDependenciesFromModuleFile")
+}
+```
+
+> **Transitive dependencies:** by default, the plugin discovers your embedded native modules' own third-party dependencies (e.g. AndroidX libraries pulled in by `react-native-screens`) and publishes them into this AAR's POM/Gradle Module Metadata, so the app consuming this AAR resolves them automatically via Maven — no manual step needed.
+>
+> If you'd rather hand-declare these yourself instead (e.g. while this is still experimental), set `experimentalIncludeTransitiveDependencies = false` in this module's `reactBrownfield { }` block and use the task-registration block above:
+>
+> ```kotlin
+> reactBrownfield {
+>     experimentalIncludeTransitiveDependencies = false
+> }
+> ```
+>
+> If you are upgrading an existing app that already has the hand-written `tasks.register("removeDependenciesFromModuleFile")` block above, you can leave it in place — the plugin's own task is named differently (`brownfieldRemoveDependenciesFromModuleFile`) and the two do not conflict. It is redundant once `experimentalIncludeTransitiveDependencies` is enabled (the plugin performs the same removal), so you can delete it whenever convenient.
+
+## 7. Create a Brownfield Configuration
+
+Create `brownfield.config.json` in your project root:
+
+```json
+{
+  "$schema": "https://oss.callstack.com/react-native-brownfield/schema.json",
+  "android": {
+    "moduleName": "reactnativeapp",
+    "variant": "Release"
+  }
+}
+```
+
+This lets the CLI reuse your packaging settings without repeating the same flags on every command.
+See [Configuration files](/docs/api-reference/configuration) for JavaScript and `package.json` variants and the full list of supported options.
+
+## 8. Create the AAR
+
+Use the brownfield CLI to package your React Native app:
+
+```bash
+npx brownfield package:android
+```
+
+Then publish to **local Maven**:
+
+```bash
+npx brownfield publish:android
+```
+
+If you prefer to keep the settings on the command line, you can still run `npx brownfield package:android --variant Release --module-name reactnativeapp` and `npx brownfield publish:android --module-name reactnativeapp` instead.
+
+## 9. Add the AAR to Your Android App
+
+Add **`mavenLocal()`** to your app's `settings.gradle.kts`:
+
+```kotlin
+dependencyResolutionManagement {
+    repositories {
+        mavenLocal()
+    }
+}
+```
+
+Add the dependency to your app's `build.gradle.kts`:
+
+```kotlin
+dependencies {
+    implementation("com.yourapp:reactnativeapp:0.0.1-local")
+}
+```
+
+## 10. Initialize React Native
+
+In your **`MainActivity`**:
+
+```kotlin
+import com.yourapp.reactnativeapp.ReactNativeHostManager
+
+class MainActivity : AppCompatActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        ReactNativeHostManager.initialize(this.application) {
+            println("JS bundle loaded")
+        }
+        // ... rest of your onCreate code
+    }
+}
+```
+
+## 11. Show the React Native UI
+
+### Using Fragment
+
+Add to your **`activity_main.xml`**:
+
+```xml
+<Button
+    android:id="@+id/show_rn_app_btn"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:text="Show RN App"
+    app:layout_constraintBottom_toBottomOf="parent"
+    app:layout_constraintEnd_toEndOf="parent"
+    app:layout_constraintStart_toStartOf="parent"
+    app:layout_constraintTop_toTopOf="parent" />
+
+<FrameLayout
+    android:id="@+id/fragmentContainer"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent" />
+```
+
+Update **`MainActivity`**:
+
+```kotlin
+import com.yourapp.reactnativeapp.ReactNativeHostManager
+import com.callstack.reactnativebrownfield.ReactNativeFragment
+
+class MainActivity : AppCompatActivity() {
+    private lateinit var showRNAppBtn: Button
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        ReactNativeHostManager.initialize(this.application) {
+            println("JS bundle loaded")
+        }
+
+        val rnAppFragment = ReactNativeFragment.createReactNativeFragment("YourAppName")
+        showRNAppBtn = findViewById(R.id.show_rn_app_btn)
+        showRNAppBtn.setOnClickListener {
+            supportFragmentManager
+                .beginTransaction()
+                .replace(R.id.fragmentContainer, rnAppFragment)
+                .commit()
+        }
+    }
+}
+```
+
+### Using View
+
+If you need a **View** instead of a Fragment:
+
+```kotlin
+val rnView = ReactNativeBrownfield.shared.createView(
+    this.applicationContext,
+    this,
+    "YourAppName"
+)
+```
+
+## Troubleshooting
+
+### React Native Reanimated v4 duplicate `libworklets.so`
+
+Both `react-native-reanimated` and `react-native-worklets` include `libworklets.so`. To resolve, patch `react-native-reanimated`'s **`android/build.gradle`**:
+
+```diff
+ packagingOptions {
+     excludes = [
+         "**/libreact_render*.so",
+         "**/librrc_root.so",
+         "**/libjscexecutor.so",
++        "**/libworklets.so",
+     ]
+ }
+```
+
+:::note
+The brownfield-gradle-plugin copies `.so` files to the `lib` folder. Add `**/*.so` to your `.gitignore`.
+:::
+
+## Next Steps
+
+- [Kotlin API Reference](/docs/api-reference/react-native-brownfield/kotlin)
+- [Java API Reference](/docs/api-reference/react-native-brownfield/java)
+- [Guidelines](/docs/guides/guidelines)

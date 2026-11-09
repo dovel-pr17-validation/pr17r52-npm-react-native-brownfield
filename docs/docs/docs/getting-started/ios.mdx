@@ -1,0 +1,354 @@
+import { PackageManagerTabs } from '@theme';
+
+# iOS Integration
+
+This guide walks you through packaging your React Native app as an **XCFramework** and integrating it into your native iOS app.
+
+:::tip Community CLI apps can skip steps 1-5
+For a React Native Community CLI app, `npm create @callstack/react-native-brownfield@latest` creates the framework target and its build settings, updates the `Podfile`, copies the bundle script, writes the framework interface and generates `brownfield.config.json`. See [React Native CLI Integration](/docs/getting-started/rnc-cli), then check the [static linking requirement](#static-linking-requirement) in step 2 before you run `pod install`, and continue from step 6.
+:::
+
+## Prerequisites
+
+- React Native app with `@callstack/react-native-brownfield` installed
+- Xcode installed
+- An existing iOS app (or create a new one)
+
+## 1. Create a Framework Target in Xcode
+
+1. Open your React Native project's `ios/<project_name>.xcworkspace` in Xcode
+2. Add a new target: **File → New → Target**
+3. Choose the **Framework** template
+
+![Framework Target](/images/framework-target.png)
+
+4. Give your framework a unique name (e.g., `ReactNativeFramework`)
+5. Right-click the framework folder and select **Convert to Group** (CocoaPods doesn't work properly with references). Do this for both `<FrameworkName>` and `<FrameworkName>Tests` folders.
+
+![Convert to Group](/images/convert-to-group.png)
+
+### Required Build Settings
+
+Set these build settings for your framework target:
+
+| Build Setting                        | Value   | Purpose                                          |
+| ------------------------------------ | ------- | ------------------------------------------------ |
+| **Build Libraries for Distribution** | **YES** | Creates a module interface for Swift             |
+| **User Script Sandboxing**           | **NO**  | Lets scripts modify files for JS bundle creation |
+| **Skip Install**                     | **NO**  | Ensures Xcode creates the framework files        |
+| **Enable Module Verifier**           | **NO**  | Skips testing during build for faster builds     |
+
+## 2. Update CocoaPods
+
+Add your new framework to `ios/Podfile`:
+
+```ruby
+target '<project_name>' do
+  # Add these lines
+  target '<framework_target_name>' do
+    inherit! :complete
+  end
+end
+```
+
+### Static Linking Requirement
+
+React Native Brownfield requires **static linking** to work correctly with XCFrameworks.
+
+:::tip CLI handles this automatically
+When using the **`package:ios`** CLI command, static linking is configured automatically. You don't need to do anything extra.
+:::
+
+If you're running **`pod install`** directly (e.g., during development), add this to your `Podfile`:
+
+```ruby
+linkage = ENV['USE_FRAMEWORKS']
+if linkage != nil
+  Pod::UI.puts "Configuring Pod with #{linkage}ally linked Frameworks".green
+  use_frameworks! :linkage => linkage.to_sym
+else
+  use_frameworks! :linkage => :static
+end
+```
+
+This ensures pods are linked statically by default, which is required for embedding React Native in an XCFramework.
+
+Run **`pod install`** after updating.
+
+## 3. Add the Bundle Script
+
+1. In Xcode, click on your **React Native app target**
+2. Go to **Build Phases**
+3. Find the **`Bundle React Native code and images`** step and copy the script
+
+![Bundle Phase](/images/bundle-phase.png)
+
+4. Click on your **framework target**
+5. Go to **Build Phases**
+6. Click **+** and choose **New Run Script Phase**
+
+![New Run Script Phase](/images/new-run-script.png)
+
+7. Paste the script you copied
+8. Name the phase **`Bundle React Native code and images`**
+9. Add these **input files**:
+   - `$(SRCROOT)/.xcode.env.local`
+   - `$(SRCROOT)/.xcode.env`
+
+## 4. Create the Framework's Public Interface
+
+Create a new Swift file in your framework folder:
+
+```swift
+// Export helpers from @callstack/react-native-brownfield library
+@_exported import ReactBrownfield
+
+// Initializes a Bundle instance that points at the framework target.
+public let ReactNativeBundle = Bundle(for: InternalClassForBundle.self)
+
+class InternalClassForBundle {}
+```
+
+## 5. Create a Brownfield Configuration
+
+Create `brownfield.config.json` in your project root:
+
+```json
+{
+  "$schema": "https://oss.callstack.com/react-native-brownfield/schema.json",
+  "ios": {
+    "scheme": "<framework_target_name>",
+    "configuration": "Release"
+  }
+}
+```
+
+This lets the CLI reuse your packaging settings without repeating the same flags on every command.
+See [Configuration files](/docs/api-reference/configuration) for JavaScript and `package.json` variants and the full list of supported options.
+
+## 6. Create the XCFramework
+
+Use the brownfield CLI to package your React Native app:
+
+```bash
+npx brownfield package:ios
+```
+
+This creates the XCFramework in **`ios/.brownfield/package/build/`** (relative to your project root).
+
+If you prefer to keep the settings on the command line, you can still run `npx brownfield package:ios --scheme <framework_target_name> --configuration Release` instead.
+
+If you are packaging an Expo app and want to keep the generated Expo support set minimal, pass `--use-prebuilt-expo false`. In that mode Brownfield emits only `ExpoModulesJSI.xcframework`; when the flag is omitted or set to `true`, the full Expo support set remains enabled.
+
+If you also want a local Swift Package Manager wrapper around the generated XCFrameworks, add `--add-spm-package`:
+
+```bash
+npx brownfield package:ios --scheme <framework_target_name> --configuration Release --add-spm-package
+```
+
+That command writes `Package.swift` into the same `ios/.brownfield/package/build/` directory.
+
+## 7. Add the Framework to Your iOS App
+
+1. Open **`ios/.brownfield/package/build`** directory (relative to your React Native project root)
+2. Drag these files into your native iOS app's Xcode project:
+   - **`<framework_target_name>.xcframework`** - Your React Native framework
+   - only if [using prebuilts](#react-native-prebuilts): **`React.xcframework`** and **`ReactNativeDependencies.xcframework`** - React Native frameworks emitted in supported configurations, as described in [React Native Prebuilts](#react-native-prebuilts) section
+   - **`hermesvm.xcframework`** - JavaScript runtime (or `hermes.xcframework` for RN < 0.82.0)
+   - **`ReactBrownfield.xcframework`** - React Native Brownfield library
+   - `Brownie.xcframework` - Brownie shared state library (only when using the Brownie package)
+   - `BrownfieldNavigation.xcframework` - Brownfield navigation integration (only when using the brownfield-navigation package) for React Native navigation
+
+![Frameworks in Xcode Sidebar](/images/frameworks.png)
+
+   - Expo Only:
+     - `ExpoFileSystem.xcframework` | `ExpoFont.xcframework` | `ExpoImage.xcframework` | `ExpoModulesCore.xcframework` | `ExpoModulesJSI.xcframework` and `ExpoModulesWorklets.xcframework`
+        - These are required with the PreCompiled Expo option enabled. If it's disabled, only `ExpoModulesJSI.xcframework` is required to be linked.
+     - `libavif.xcframework` | `SDWebImage.xcframework` | `SDWebImageAVIFCoder.xcframework` | `SDWebImageSVGCoder.xcframework` and `SDWebImageWebPCoder.xcframework`
+        - These are required to be linked for `ExpoImage` to work correctly.
+     - In a React Native CLI app that uses Expo modules, also see [Expo Modules in React Native CLI Apps](/docs/guides/expo-modules).
+
+![Expo Frameworks in Xcode Sidebar](/images/expo-frameworks.png)
+
+
+:::tip Prefer SPM packaging to avoid statically linking frameworks
+When using SPM packaging, you only need to link the local SPM file to the native iOS App, see below for a detailed guide.
+:::
+
+
+### Optional: Add as a Local Swift Package
+
+If you ran `package:ios` with `--add-spm-package`, you can add the generated folder as a local Swift package instead of dragging XCFrameworks manually:
+
+1. In Xcode, choose **File > Add Package Dependencies...**
+2. Click **Add Local...**
+3. Select `ios/.brownfield/package/build/`
+
+The generated package references the packaged Brownfield XCFramework, Hermes, `ReactBrownfield`, and other frameworks such as `Brownie`, `BrownfieldNavigation`, `React`, and `ReactNativeDependencies` when they exist in that folder. For Expo, this will also link the frameworks like `ExpoModulesCore` etc.
+
+If `--use-prebuilt-expo false` was used, the generated package only references `ExpoModulesJSI` from the Expo support set.
+
+After adding the local package:
+
+1. Select your host app target
+2. Open the **General** tab
+3. Under **Frameworks, Libraries, and Embedded Content**, add the package product named after your packaged framework target, for example `<framework_target_name>`
+4. Remove any old direct `*.xcframework` entries from the target if you are switching from manual drag-and-drop to the local package flow
+
+For a successful validation of a Release package:
+
+1. Build the React Native package with `--add-spm-package`
+2. Add the generated local package to the host app
+3. Add the package product to the host app target
+4. Build the host app
+5. Run the host app without Metro and confirm the packaged React Native content loads correctly
+
+## 8. Initialize React Native
+
+In your native iOS app's **`AppDelegate.swift`**:
+
+```swift
+import <framework_target_name>
+
+@main
+class AppDelegate: UIResponder, UIApplicationDelegate {
+    var window: UIWindow?
+
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
+    ) -> Bool {
+        // Initialize React Native
+        ReactNativeBrownfield.shared.bundle = ReactNativeBundle
+        ReactNativeBrownfield.shared.startReactNative(onBundleLoaded: { timings in
+            print("React Native bundle loaded jsBundleLoadTime=\(String(describing: timings.jsBundleLoadTime)) jsBundleEvaluationTime=\(String(describing: timings.jsBundleEvaluationTime))")
+        })
+
+        window = UIWindow(frame: UIScreen.main.bounds)
+
+        // Create VC with your module name registered via AppRegistry.registerComponent
+        let reactNativeVC = ReactNativeViewController(moduleName: "ReactNativeApp")
+
+        window?.rootViewController = reactNativeVC
+        window?.makeKeyAndVisible()
+
+        return true
+    }
+}
+```
+
+### Preload the JavaScript bundle
+
+This `startReactNative` call only prepares the runtime. React Native creates and starts the host in `viewWithModuleName:`. Thus React Native loads and evaluates the bundle only when it creates the first React Native screen. React Native also calls `onBundleLoaded` at that time.
+
+To do this work at the app launch, give `preloadBundle: true` to `startReactNative`. On Android, `ReactNativeBrownfield.initialize` does the same operation. This shape of `startReactNative` also takes the launch options:
+
+```swift
+ReactNativeBrownfield.shared.bundle = ReactNativeBundle
+ReactNativeBrownfield.shared.startReactNative(launchOptions: launchOptions, preloadBundle: true) { timings in
+    print("React Native bundle loaded jsBundleLoadTime=\(String(describing: timings.jsBundleLoadTime)) jsBundleEvaluationTime=\(String(describing: timings.jsBundleEvaluationTime))")
+}
+```
+
+A preload creates and starts the React Host in the `startReactNative` call. React Native then reads the bundle URL and evaluates the bundle on the JavaScript thread, in parallel with the remainder of your app launch. Thus `startReactNative` must be the last operation: `bundle`, `bundlePath`, `bundleURLOverride` and every other option must have the final value before the call. An option that you set after the call comes too late, and the JavaScript thread can read it at the same time.
+
+The call itself makes the host and the module registry on the caller's thread. This work is smaller than a bundle evaluation, but it is not free. If you preload React Native in your app's launch critical section, then it impacts your app's launch time. In exchange, the first React Native screen appears faster.
+
+For the rules of `onBundleLoaded` and of the launch options, see [`startReactNative`](/docs/api-reference/react-native-brownfield/swift#startreactnative).
+
+## 9. Run Your App
+
+### Debug Configuration
+
+When running in **Debug**, React Native Brownfield expects a JS dev server running:
+
+```bash
+npx react-native start
+```
+
+## Embedded bundle in Development
+
+If you want to run a **Debug-built** framework without Metro, enable the embedded bundle explicitly before calling `startReactNative`:
+
+```swift
+ReactNativeBrownfield.shared.bundle = ReactNativeBundle
+ReactNativeBrownfield.shared.preferEmbeddedBundleInDebug = true
+ReactNativeBrownfield.shared.startReactNative()
+```
+
+### Release Configuration
+
+In **Release**, the JS bundle is loaded directly from the XCFramework - no dev server needed.
+
+## SwiftUI Integration
+
+For SwiftUI apps, use **`ReactNativeView`**:
+
+```swift
+import SwiftUI
+import <framework_target_name>
+
+@main
+struct MyApp: App {
+    init() {
+        ReactNativeBrownfield.shared.bundle = ReactNativeBundle
+        ReactNativeBrownfield.shared.startReactNative { timings in
+            print("React Native bundle loaded jsBundleLoadTime=\(String(describing: timings.jsBundleLoadTime)) jsBundleEvaluationTime=\(String(describing: timings.jsBundleEvaluationTime))")
+        }
+    }
+
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+    }
+}
+
+struct ContentView: View {
+    var body: some View {
+        NavigationView {
+            VStack {
+                Text("Welcome to the Native App")
+                    .padding()
+
+                NavigationLink("Push React Native Screen") {
+                    ReactNativeView(moduleName: "ReactNativeApp")
+                        .navigationBarHidden(true)
+                }
+            }
+        }
+    }
+}
+```
+
+## React Native Prebuilts
+
+React Native can ship prebuilt iOS artifacts, which greatly speeds up the build time. Brownfield supports them since version 3.7.0 in the following scenarios:
+
+1. In "Vanilla" React Native projects:
+   - RN 0.83 (oldest supported by Brownfield v3) ships opt-in support (first in 0.81), which can be opted-in for via `--use-prebuilt-rn-core` flag.
+   - RN >= 0.84 ships prebuilts by default, therefore Brownfield enables them in packaging by default for RN >= 0.84.
+2. In Expo projects:
+   - with Expo 55+, enabled by default
+   - unsupported in Expo < 55 due to lack of support for packaging brownfield with prebuilts in Expo internals (attempting to results in native build issues)
+
+When using the `--use-prebuilt-rn-core` flag:
+
+- for RN 0.83, Brownfield will use prebuilts if that flag is set to true (default behaviour in flag absence: prebuilts **are not** used)
+- for RN >= 0.84:
+  - Brownfield will use prebuilts if that flag is not set, or is set to true (default behaviour in flag absence: prebuilts **are** used)
+  - if the flag is explicitly set to false, Brownfield will **not** use prebuilts
+- will fail for RN < 0.81, or Expo < 55 due to Brownfield CLI checks (those scenarios will not work with prebuilts)
+
+## Expo Prebuilts
+
+Starting with Expo SDK 56, Brownfield uses Expo's [precompiled modules](https://docs.expo.dev/guides/prebuilt-expo-modules/) by default. To build Expo modules from source instead, pass `--use-prebuilt-expo false`. The flag also sets `EXPO_USE_PRECOMPILED_MODULES` for `pod install`, so you don't need to change your `Podfile`. Without the flag, Brownfield also builds from source when you export `EXPO_USE_PRECOMPILED_MODULES=0` or when `ios/Podfile.properties.json` sets it to `"false"`. Expo's Podfile always honors that property, so remove it if you want precompiled modules.
+
+Expo builds its precompiled modules against the React Native version your Expo SDK targets. If your app uses a different React Native minor version, Brownfield builds Expo modules from source by default, because precompiled ones would crash at runtime.
+
+
+## Next Steps
+
+- [Swift API Reference](/docs/api-reference/react-native-brownfield/swift)
+- [Objective-C API Reference](/docs/api-reference/react-native-brownfield/objective-c)
+- [Guidelines](/docs/guides/guidelines)

@@ -1,0 +1,82 @@
+# Troubleshooting
+
+This section provides a troubleshooting guide for common issues encountered when using the `react-native-brownfield` library. If you face any problems not covered here, please refer to the official documentation or reach out to the community for support.
+
+## [Android] `Error: duplicate resources` during `:app:mergeReleaseAssets`
+
+An error like `Error: duplicate resources` during the `:app:mergeReleaseAssets` phase may occur if you have upgraded your React Native version from a version less than `0.82.0`, to a version greater than or equal to (>=) `0.82.0`.
+
+This is because RN 0.82.0 changed the path to which the JS bundle is written to from `build/generated/assets/createBundleReleaseJsAndAssets/` to `build/generated/assets/react/release/`, and analogously changed the path for `res/createBundleReleaseJsAndAssets/`.
+
+The brownfield Gradle plugin adds both directories to the source sets, potentially causing a conflict of artifacts. To fix this, just once clean your build directory (precisely, the `app/build/` directory) and rebuild the project. All subsequent builds should work fine.
+
+## [Android] Transitive dependencies not being auto resolved
+
+Installed third-party packages like `react-native-screens` or others may rely on transitive dependencies in their `build.gradle` file. For bare React Native apps, `brownfield-gradle-plugin` auto resolves these by default via the (experimental) `experimentalIncludeTransitiveDependencies` option — see [Configure Maven Publishing](/docs/getting-started/android#6-configure-maven-publishing) for details.
+
+For Expo apps, dependencies of Expo modules are always resolved, and dependencies of other native libraries follow the same `experimentalIncludeTransitiveDependencies` option.
+
+Upgrading an existing app requires no changes on your side — in particular, you do not need to remove the hand-written `tasks.register("removeDependenciesFromModuleFile")` block if you have one, since the plugin's own task is named differently and the two do not conflict. Be aware of two behaviour changes once this is enabled: dependencies your embedded modules need will start appearing in the published POM, and a version you pinned yourself may be **raised** (never lowered) if an embedded module requires a higher one.
+
+If you've set `experimentalIncludeTransitiveDependencies = false` (e.g. to opt out while this is still experimental), use one of the options below instead.
+
+#### Option 1:
+
+Add those dependencies from `react-native-screens/build.gradle` to `<your_brownfield_module>/build.gradle`:
+
+```kts
+api("com.google.android.material:material:1.13.0")
+```
+
+#### Option 2:
+
+Add those dependencies from `react-native-screens/build.gradle` to `<your_native_app>/build.gradle`:
+
+```kts
+implementation("com.google.android.material:material:1.13.0")
+```
+
+## [iOS] `No script URL provided` in Release configuration
+
+If you encounter this error, most likely you have missed a setup step and are missing `ReactNativeBrownfield.shared.bundle = ReactNativeBundle` before your call to `startReactNative`.
+
+## [Android] Defining Missing Dimension Strategies
+
+This maybe required if any third party library has defined product flavors and dimensions. If so, then the consuming modules, in brownfield case, `:app` and `:brownfieldlib` need 
+to define the `missingDimensionStrategy`.
+
+:::info
+This should be only required for bare react native. For Expo, this is already handled by `@callstack/react-native-brownfield` expo config plugin.
+You only need to define `android.expo.missingDimensionStrategies` using the brownfield config.
+:::
+
+#### Step 1:
+```groovy
+// app/build.gradle
+
+android {
+    defaultConfig {
+        ...
+        versionName "1.0"
+        missingDimensionStrategy("type", "alpha")
+    }
+}
+```
+
+#### Step 2:
+```kts
+// brownfieldlib/build.gradle
+
+reactBrownfield {
+    missingDimensionStrategies = listOf("type", "alpha")
+}
+
+android {
+    defaultConfig {
+        ...
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        consumerProguardFiles("consumer-rules.pro")
+        missingDimensionStrategy("type", "alpha")
+    }
+}
+```

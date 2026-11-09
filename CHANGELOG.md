@@ -1,0 +1,369 @@
+# Changelog
+
+_History prior to 3.7.0 is available in the per-package CHANGELOG files._
+
+## 6.1.0
+
+### Minor Changes
+
+- [#522](https://github.com/callstack/react-native-brownfield/pull/522) [`20776bb`](https://github.com/callstack/react-native-brownfield/commit/20776bb714c2de1e962515aa7c88235b60c7dabf) Thanks [@KisaneNeko](https://github.com/KisaneNeko)! - feat: the published POM and `module.json` now follow the brownfield module's Gradle exclude rules (`configurations.all { exclude(...) }`). Before, the plugin re-added an excluded dependency when it injected the embedded libraries' dependencies, so the host app still resolved it. The excludes are also written onto every dependency the plugin injects, so the excluded library can't arrive through one of them. On Expo, list them in `android.excludeDependencies` (as `group:module` or `group`), which the config plugin writes into the generated module.
+
+- [#520](https://github.com/callstack/react-native-brownfield/pull/520) [`b87cdff`](https://github.com/callstack/react-native-brownfield/commit/b87cdff0de1cb147289a7497973b6f191dc74134) Thanks [@KisaneNeko](https://github.com/KisaneNeko)! - fix: pick the right `.so` files for the Android AAR. With `useStrippedSoFiles = false`, the AAR now has `libappmodules.so` and `libreact_codegen_*.so`. Before this fix, those libs were missing and host apps crashed. The AAR also stops embedding the `.so` files of Maven dependencies. The host already gets those through the POM, so its build no longer fails with `2 files found with path 'lib/<abi>/<name>.so'`. If your app module builds or ships a `.so` of its own, list it in `reactBrownfield.dynamicLibs`, which is back. The build lists the `.so` files it left out in `<brownfield module>/build/reports/brownfield/<variant>/skipped-so.txt`. After upgrading, check that file: it lists the `.so` files that used to be in the AAR and now aren't.
+
+### Patch Changes
+
+- Updated dependencies [[`20776bb`](https://github.com/callstack/react-native-brownfield/commit/20776bb714c2de1e962515aa7c88235b60c7dabf)]:
+  - @callstack/brownfield-cli@6.1.0
+
+- Updated dependencies [[`520811c`](https://github.com/callstack/react-native-brownfield/commit/520811c47a122cacd1ec15f1b064ad08d699eebb), [`f3dbbd1`](https://github.com/callstack/react-native-brownfield/commit/f3dbbd1c2579f905a358faac0ad1677b3740cebc), [`b87cdff`](https://github.com/callstack/react-native-brownfield/commit/b87cdff0de1cb147289a7497973b6f191dc74134), [`20776bb`](https://github.com/callstack/react-native-brownfield/commit/20776bb714c2de1e962515aa7c88235b60c7dabf), [`58aedad`](https://github.com/callstack/react-native-brownfield/commit/58aedad94f38098424937533f2ce0b0c3df62067), [`6a258da`](https://github.com/callstack/react-native-brownfield/commit/6a258da42f2bd2cbb112f56948108323aeba74d9)]:
+  - @callstack/react-native-brownfield@6.1.0
+
+- [#512](https://github.com/callstack/react-native-brownfield/pull/512) [`520811c`](https://github.com/callstack/react-native-brownfield/commit/520811c47a122cacd1ec15f1b064ad08d699eebb) Thanks [@KisaneNeko](https://github.com/KisaneNeko)! - fix: package classes from libraries' local jars (`libs/*.jar`) into the Android AAR; previously host apps crashed with NoClassDefFoundError. If your app also has those classes, because it added the jar itself as a workaround or depends on a library that the jar bundles, the build now fails with duplicate classes: remove the app's copy
+
+- [#513](https://github.com/callstack/react-native-brownfield/pull/513) [`f3dbbd1`](https://github.com/callstack/react-native-brownfield/commit/f3dbbd1c2579f905a358faac0ad1677b3740cebc) Thanks [@KisaneNeko](https://github.com/KisaneNeko)! - fix: keep the resources of every library embedded in the Android AAR; previously only one library's `res/values` survived and host apps failed at resource linking. As in a regular app, the module's own `res` and `resValue`s win over a library's, and when two libraries define the same resource the first one wins (previously the last one won for files such as drawables)
+
+- [#521](https://github.com/callstack/react-native-brownfield/pull/521) [`58aedad`](https://github.com/callstack/react-native-brownfield/commit/58aedad94f38098424937533f2ce0b0c3df62067) Thanks [@KisaneNeko](https://github.com/KisaneNeko)! - fix: the AAR build no longer fails with duplicate resources when an embedded library ships the same drawables Metro generates for the app's bundle. Metro's copy wins.
+
+- [#503](https://github.com/callstack/react-native-brownfield/pull/503) [`6a258da`](https://github.com/callstack/react-native-brownfield/commit/6a258da42f2bd2cbb112f56948108323aeba74d9) Thanks [@RaphaelFakhri](https://github.com/RaphaelFakhri)! - `ReactNativeBrownfield.onMessage` no longer calls the callback a second time, with the raw message text, when the callback throws. The error now propagates instead of being swallowed.
+
+## 6.0.1
+
+### Patch Changes
+
+- Updated dependencies [[`79817d1`](https://github.com/callstack/react-native-brownfield/commit/79817d1a21b0cb28ae63d41e935c57af8e7db39f), [`69fe3e3`](https://github.com/callstack/react-native-brownfield/commit/69fe3e3f05a49036cae1f3564a47ef3eed186155)]:
+  - @callstack/brownfield-cli@6.0.1
+
+- [#487](https://github.com/callstack/react-native-brownfield/pull/487) [`79817d1`](https://github.com/callstack/react-native-brownfield/commit/79817d1a21b0cb28ae63d41e935c57af8e7db39f) Thanks [@KisaneNeko](https://github.com/KisaneNeko)! - Support Expo modules in React Native CLI apps. `brownfield package:*` no longer runs `expo prebuild` on projects with committed `android/` and `ios/` directories, which used to delete the brownfield library module. Prebuild now runs only when the native directory is missing or gitignored. If you commit the generated directories of an Expo app, run `npx expo prebuild` yourself after changing `app.json` or config plugins. `create-react-native-brownfield` now detects Expo and sets up the iOS framework to use the Expo runtime. On a re-run after adding Expo, it also raises an existing framework target to iOS 16.4.
+  `--use-prebuilt-expo` now also turns Expo's precompiled modules on or off for `pod install`, and turns on Swift explicit modules so packaging works in projects that still carry the old `SWIFT_ENABLE_EXPLICIT_MODULES = NO` workaround. It defaults to building Expo from source when the app's React Native version doesn't match the one Expo's precompiled modules were built for.
+  `package:ios` now copies the expo-image dependency XCFrameworks (SDWebImage and libavif) as real files instead of symlinks into `node_modules`, so the package works when moved to another machine.
+  Re-running `create-react-native-brownfield` after `pod install` no longer adds a second Sources build phase to the framework target, which made the next `pod install` fail.
+  The `package:ios` script that `create-react-native-brownfield` adds now passes `--add-spm-package`, so the iOS app adds one local Swift package instead of every XCFramework. Existing scripts aren't changed.
+
+- [#485](https://github.com/callstack/react-native-brownfield/pull/485) [`69fe3e3`](https://github.com/callstack/react-native-brownfield/commit/69fe3e3f05a49036cae1f3564a47ef3eed186155) Thanks [@hurali97](https://github.com/hurali97)! - respect `--destination` in `package:ios` when merging XCFrameworks
+
+- [#508](https://github.com/callstack/react-native-brownfield/pull/508) [`7e63e20`](https://github.com/callstack/react-native-brownfield/commit/7e63e204c449ab36ce5b109ff3eb5db086260089) Thanks [@malopezr7](https://github.com/malopezr7)! - Fix an iOS crash with expo-updates 57 when updates are enabled. The Expo runtime no longer asks the Updates controller for its launch asset before the controller has started.
+
+- [#495](https://github.com/callstack/react-native-brownfield/pull/495) [`3b38aeb`](https://github.com/callstack/react-native-brownfield/commit/3b38aebb63810a8d1cc686bd70cccdeb279bf119) Thanks [@hurali97](https://github.com/hurali97)! - fix: resolve the namespace from AndroidManifest.xml `package` for libraries without a `namespace` in build.gradle
+
+- [#500](https://github.com/callstack/react-native-brownfield/pull/500) [`0f62490`](https://github.com/callstack/react-native-brownfield/commit/0f62490e7602d1aad56ee5d9eba2fd667dc0171a) Thanks [@hurali97](https://github.com/hurali97)! - fix(android): stop the scaffolded `ReactNativeHostManager` from loading React Native twice
+  The `ReactNativeHostManager.kt` generated by `npm create @callstack/react-native-brownfield` for React Native CLI projects called `loadReactNative(application)` and then `ReactNativeBrownfield.initialize(...)`. Both run `DefaultNewArchitectureEntryPoint.load()`, which overrides the React Native feature flags, so the app crashed on startup with `Feature flags cannot be overridden more than once`.
+  The generated host manager now:
+  - no longer calls `loadReactNative` (`ReactNativeBrownfield.initialize` already loads the native libraries and feature flags exactly once);
+  - passes the `ReactHost` as a factory to the non-deprecated `initialize` overload, so it is built after `SoLoader.init` instead of crashing with `SoLoader.init() not yet called`;
+  - keeps the one behavior `loadReactNative` provided on the side by flagging edge-to-edge when `IS_EDGE_TO_EDGE_ENABLED` is set.
+  Fixes [#492](https://github.com/callstack/react-native-brownfield/issues/492).
+
+## 6.0.0
+
+### Major Changes
+
+- [#494](https://github.com/callstack/react-native-brownfield/pull/494) [`d28810c`](https://github.com/callstack/react-native-brownfield/commit/d28810caa32f727d56915d8e8d9276a82560b231) Thanks [@hurali97](https://github.com/hurali97)! - Add Android startup, TTID/TTFD, and JS/UI responsiveness metrics. Android's
+  `OnJSBundleLoaded` callback now receives `JSBundleTimings` instead of a Boolean.
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @callstack/brownfield-cli@6.0.0
+
+- Updated dependencies [[`d28810c`](https://github.com/callstack/react-native-brownfield/commit/d28810caa32f727d56915d8e8d9276a82560b231)]:
+  - @callstack/react-native-brownfield@6.0.0
+
+## 5.3.0
+
+### Minor Changes
+
+- [#480](https://github.com/callstack/react-native-brownfield/pull/480) [`f17f556`](https://github.com/callstack/react-native-brownfield/commit/f17f55616615a2bcb82d90f358efd838f56f5e67) Thanks [@gedu](https://github.com/gedu)! - add @callstack/create-react-native-brownfield: scaffold Brownfield packaging targets in an existing React Native CLI project (`npm create @callstack/react-native-brownfield`), plus the `@callstack/react-native-brownfield/scaffold` subpath export it uses
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @callstack/brownfield-cli@5.3.0
+
+- Updated dependencies [[`f17f556`](https://github.com/callstack/react-native-brownfield/commit/f17f55616615a2bcb82d90f358efd838f56f5e67)]:
+  - @callstack/react-native-brownfield@5.3.0
+
+## 5.2.0
+
+### Minor Changes
+
+- [#467](https://github.com/callstack/react-native-brownfield/pull/467) [`31c3939`](https://github.com/callstack/react-native-brownfield/commit/31c39399aad0efb098876d35a4fbbe80835d5dba) Thanks [@hurali97](https://github.com/hurali97)! - add expo sdk 58
+
+### Patch Changes
+
+- Updated dependencies [[`31c3939`](https://github.com/callstack/react-native-brownfield/commit/31c39399aad0efb098876d35a4fbbe80835d5dba)]:
+  - @callstack/brownfield-cli@5.2.0
+
+- [#477](https://github.com/callstack/react-native-brownfield/pull/477) [`9e57d43`](https://github.com/callstack/react-native-brownfield/commit/9e57d4384f93459526a41084ee82355dd43f4ed9) Thanks [@KisaneNeko](https://github.com/KisaneNeko)! - fix: publish dependencies of community libraries (e.g. react-native-screens, lottie-react-native) embedded in Expo brownfield AARs; the published POM now lists them, previously host apps could crash with NoClassDefFoundError
+
+## 5.1.1
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @callstack/brownfield-cli@5.1.1
+
+- [#458](https://github.com/callstack/react-native-brownfield/pull/458) [`bf976fd`](https://github.com/callstack/react-native-brownfield/commit/bf976fdebc1abb228c03213c9a1b41d9967d0909) Thanks [@KisaneNeko](https://github.com/KisaneNeko)! - Bump the Brownfield Gradle Plugin version injected by the Expo config plugin to `2.0.0-alpha09`.
+
+- [#462](https://github.com/callstack/react-native-brownfield/pull/462) [`2f7d5da`](https://github.com/callstack/react-native-brownfield/commit/2f7d5daf661808fdfdd1caae89236dbdfec3f62e) Thanks [@likevy](https://github.com/likevy)! - fixes [#457](https://github.com/callstack/react-native-brownfield/issues/457), android back callbacks survived RN fragment view destruction, retaining delegates and intercepting back presses after re-entry
+
+- [#470](https://github.com/callstack/react-native-brownfield/pull/470) [`09162c2`](https://github.com/callstack/react-native-brownfield/commit/09162c27bd8455b67bc0e2890a4ffe8dae5b9eae) Thanks [@KisaneNeko](https://github.com/KisaneNeko)! - Fix `popToNative()` on iOS closing every React Native screen instead of only the topmost one.
+  `popToNative()` is delivered as an app-wide notification, so every live React Native surface acted on it — including surfaces buried under other screens, and each surface acted twice when hosted by SwiftUI. In a stack such as RN → native → RN, a single call tore down the whole navigation stack, taking native screens with it.
+  A React Native surface now acts only when it is the topmost one on screen, and only once per host.
+  Two consequences worth knowing about:
+  - When no React Native surface is on screen — for example one hidden behind a full-screen native modal — `popToNative()` is now a no-op instead of popping the hidden screen. It logs when this happens.
+  - `popToNative()` no longer dismisses a modally presented native screen that merely _contains_ a React Native surface. Only a surface that owns a navigation stack entry pops.
+
+## 5.1.0
+
+### Minor Changes
+
+- [#450](https://github.com/callstack/react-native-brownfield/pull/450) [`4846a05`](https://github.com/callstack/react-native-brownfield/commit/4846a055eb06f8c8dea08b33d0bb0d1b2a2f2f86) Thanks [@borisyankov](https://github.com/borisyankov)! - Add `preloadBundle` to `startReactNative` on iOS. Without a preload, `startReactNative` only makes the factory, and React Native loads the JavaScript bundle when it creates the first React Native view. `startReactNative(launchOptions:preloadBundle:onBundleLoaded:)` moves that work to the app launch: the call starts the React Host, and React Native evaluates the bundle on the JavaScript thread, in parallel with the remainder of the app launch. On Android, `ReactNativeBrownfield.initialize` does the same operation. This shape of `startReactNative` also takes the launch options for the React Host.
+  `onBundleLoaded` now runs on the main thread, and not on the JavaScript thread. A callback that you add after React Native loaded the bundle runs in the next turn of the main run loop.
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @callstack/brownfield-cli@5.1.0
+
+- [#381](https://github.com/callstack/react-native-brownfield/pull/381) [`b8e8da5`](https://github.com/callstack/react-native-brownfield/commit/b8e8da50fbf20058c5c2745981c7deb5cb33061a) Thanks [@alpharius-ck](https://github.com/alpharius-ck)! - e2e tests for android
+
+## 5.0.2
+
+### Patch Changes
+
+- [#449](https://github.com/callstack/react-native-brownfield/pull/449) [`83657e7`](https://github.com/callstack/react-native-brownfield/commit/83657e7c0d209161561bff39d6e043a154e350d0) Thanks [@hurali97](https://github.com/hurali97)! - Fix npm publishing by upgrading to Changesets v3 (Yarn rewrites `workspace:` ranges on publish) and correcting package `repository` metadata required for npm provenance.
+
+- Updated dependencies [[`83657e7`](https://github.com/callstack/react-native-brownfield/commit/83657e7c0d209161561bff39d6e043a154e350d0)]:
+  - @callstack/brownfield-cli@5.0.2
+
+## 5.0.1
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @callstack/brownfield-cli@5.0.1
+
+- [#442](https://github.com/callstack/react-native-brownfield/pull/442) [`7898f8a`](https://github.com/callstack/react-native-brownfield/commit/7898f8a4921a725dd4143516a0d187f0605540c2) Thanks [@janicduplessis](https://github.com/janicduplessis)! - feat: allow extending the list of .so files kept out of the AAR
+  Adds a `reactBrownfield.ignoreEmbeddedLibs` option so a project can name additional native libraries that should not be embedded, next to the built-in `IGNORE_EMBEDDED_LIBS` list.
+
+## 5.0.0
+
+### Major Changes
+
+- [#424](https://github.com/callstack/react-native-brownfield/pull/424) [`af2b20c`](https://github.com/callstack/react-native-brownfield/commit/af2b20c8e921f702b4c2ce27bf82cd43cb82d068) Thanks [@hurali97](https://github.com/hurali97)! - feat: drop support for Expo SDK 55
+
+### Patch Changes
+
+- [#434](https://github.com/callstack/react-native-brownfield/pull/434) [`1183202`](https://github.com/callstack/react-native-brownfield/commit/118320245741d337bf9d6202eb27ee60cc7faa47) Thanks [@hurali97](https://github.com/hurali97)! - fix: dependabot alerts
+
+- Updated dependencies [[`1183202`](https://github.com/callstack/react-native-brownfield/commit/118320245741d337bf9d6202eb27ee60cc7faa47)]:
+  - @callstack/brownfield-cli@5.0.0
+
+## 4.3.0
+
+### Minor Changes
+
+- [#412](https://github.com/callstack/react-native-brownfield/pull/412) [`627fcbc`](https://github.com/callstack/react-native-brownfield/commit/627fcbce9811ca12773b3caee319ed4cd610123e) Thanks [@Doko-Demo-Doa](https://github.com/Doko-Demo-Doa)! - feat: add support for callback and promise to brownfield navigation
+
+- [#422](https://github.com/callstack/react-native-brownfield/pull/422) [`8894482`](https://github.com/callstack/react-native-brownfield/commit/8894482efb68d745dd1f8e7433b7a67d94440f0a) Thanks [@hurali97](https://github.com/hurali97)! - feat: support proguard/R8 minification
+
+### Patch Changes
+
+- Updated dependencies [[`627fcbc`](https://github.com/callstack/react-native-brownfield/commit/627fcbce9811ca12773b3caee319ed4cd610123e), [`8894482`](https://github.com/callstack/react-native-brownfield/commit/8894482efb68d745dd1f8e7433b7a67d94440f0a)]:
+  - @callstack/brownfield-cli@4.3.0
+
+## 4.2.0
+
+### Minor Changes
+
+- [#413](https://github.com/callstack/react-native-brownfield/pull/413) [`39cf6a7`](https://github.com/callstack/react-native-brownfield/commit/39cf6a751c62ee701c96468a5a701c0bdf96463b) Thanks [@hurali97](https://github.com/hurali97)! - feat: add option to use local maven
+
+### Patch Changes
+
+- Updated dependencies [[`39cf6a7`](https://github.com/callstack/react-native-brownfield/commit/39cf6a751c62ee701c96468a5a701c0bdf96463b)]:
+  - @callstack/brownfield-cli@4.2.0
+
+## 4.1.0
+
+### Minor Changes
+
+- [#367](https://github.com/callstack/react-native-brownfield/pull/367) [`dd1082a`](https://github.com/callstack/react-native-brownfield/commit/dd1082a42c83f2cb8fd7f03df05a6e0a13e8833c) Thanks [@hurali97](https://github.com/hurali97)! - refactor: remove deprecated APIs
+
+### Patch Changes
+
+- Updated dependencies [[`dd1082a`](https://github.com/callstack/react-native-brownfield/commit/dd1082a42c83f2cb8fd7f03df05a6e0a13e8833c)]:
+  - @callstack/brownfield-cli@4.1.0
+
+- [#417](https://github.com/callstack/react-native-brownfield/pull/417) [`28b534e`](https://github.com/callstack/react-native-brownfield/commit/28b534ea3f1bfd298b89049a6733eb23b9f7d9fc) Thanks [@hurali97](https://github.com/hurali97)! - fix: merge classes to contain third party libs classes
+
+## 4.0.0
+
+### Major Changes
+
+- [#407](https://github.com/callstack/react-native-brownfield/pull/407) [`dee9559`](https://github.com/callstack/react-native-brownfield/commit/dee9559d6a1a1169c0824542ec8d2ea5ef6475e7) Thanks [@hurali97](https://github.com/hurali97)! - feat: drop support for expo sdk 54
+
+### Patch Changes
+
+- Updated dependencies [[`dee9559`](https://github.com/callstack/react-native-brownfield/commit/dee9559d6a1a1169c0824542ec8d2ea5ef6475e7)]:
+  - @callstack/brownfield-cli@4.0.0
+
+- [#414](https://github.com/callstack/react-native-brownfield/pull/414) [`803f8ca`](https://github.com/callstack/react-native-brownfield/commit/803f8ca488515d7589d3b36e4ebb57d77df1d43d) Thanks [@artus9033](https://github.com/artus9033)! - fix: duplicated JNI libs on cold publish
+
+## 3.15.0
+
+### Minor Changes
+
+- [#410](https://github.com/callstack/react-native-brownfield/pull/410) [`03c2496`](https://github.com/callstack/react-native-brownfield/commit/03c2496989fdafdc0863a97f01df9b7f5cd78a55) Thanks [@hurali97](https://github.com/hurali97)! - bump brownfield-gradle-plugin
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @callstack/brownfield-cli@3.15.0
+
+## 3.14.0
+
+### Minor Changes
+
+- [#360](https://github.com/callstack/react-native-brownfield/pull/360) [`10ff597`](https://github.com/callstack/react-native-brownfield/commit/10ff597c057c04aa093b4e5ae8c5334b169d3d56) Thanks [@adamTrz](https://github.com/adamTrz)! - Expo SDK 56 support
+
+### Patch Changes
+
+- Updated dependencies [[`10ff597`](https://github.com/callstack/react-native-brownfield/commit/10ff597c057c04aa093b4e5ae8c5334b169d3d56)]:
+  - @callstack/brownfield-cli@3.14.0
+
+## 3.13.2
+
+### Patch Changes
+
+- Updated dependencies [[`8e90842`](https://github.com/callstack/react-native-brownfield/commit/8e90842291348dcb0542a6787f5cfbb1017532dd), [`3475c3d`](https://github.com/callstack/react-native-brownfield/commit/3475c3db375988ebd63ce01bfd93f4dbb1a55e8d), [`4088c01`](https://github.com/callstack/react-native-brownfield/commit/4088c01a069306565dd3e279d9132f5dbe861d0b)]:
+  - @callstack/brownfield-cli@3.13.2
+
+- [#398](https://github.com/callstack/react-native-brownfield/pull/398) [`8e90842`](https://github.com/callstack/react-native-brownfield/commit/8e90842291348dcb0542a6787f5cfbb1017532dd) Thanks [@artus9033](https://github.com/artus9033)! - feat: support brownfield unified config file in Expo
+
+- [#402](https://github.com/callstack/react-native-brownfield/pull/402) [`3475c3d`](https://github.com/callstack/react-native-brownfield/commit/3475c3db375988ebd63ce01bfd93f4dbb1a55e8d) Thanks [@artus9033](https://github.com/artus9033)! - feat: support local BGP in Expo config plugin
+
+- [#397](https://github.com/callstack/react-native-brownfield/pull/397) [`4088c01`](https://github.com/callstack/react-native-brownfield/commit/4088c01a069306565dd3e279d9132f5dbe861d0b) Thanks [@artus9033](https://github.com/artus9033)! - fix: generate config schema with descriptions, add more descriptions
+
+- [#401](https://github.com/callstack/react-native-brownfield/pull/401) [`c4410f6`](https://github.com/callstack/react-native-brownfield/commit/c4410f6af4c781cf3513ba55d03fa1b1055a443b) Thanks [@artus9033](https://github.com/artus9033)! - fix: brownfield Gradle Plugin not to depend on \*UpdatesResources task from expo-updates if it is absent
+
+## 3.13.1
+
+### Patch Changes
+
+- Updated dependencies [[`89bc23c`](https://github.com/callstack/react-native-brownfield/commit/89bc23c00bb85c036fce6d4ea142fb3ba0846deb)]:
+  - @callstack/brownfield-cli@3.13.1
+
+- [#394](https://github.com/callstack/react-native-brownfield/pull/394) [`89bc23c`](https://github.com/callstack/react-native-brownfield/commit/89bc23c00bb85c036fce6d4ea142fb3ba0846deb) Thanks [@Esemesek](https://github.com/Esemesek)! - Fix schema.json not being released
+
+## 3.13.0
+
+### Minor Changes
+
+- [#352](https://github.com/callstack/react-native-brownfield/pull/352) [`b451bb1`](https://github.com/callstack/react-native-brownfield/commit/b451bb18dffe3974e39537cc0c023ef634ff3152) Thanks [@alpharius-ck](https://github.com/alpharius-ck)! - e2e tests
+
+- [#339](https://github.com/callstack/react-native-brownfield/pull/339) [`ef835b5`](https://github.com/callstack/react-native-brownfield/commit/ef835b52a130e4cd8770a2db04402cbb066b9c27) Thanks [@Esemesek](https://github.com/Esemesek)! - Added configuration file support for react-native-brownfield packages.
+
+- [#359](https://github.com/callstack/react-native-brownfield/pull/359) [`533569b`](https://github.com/callstack/react-native-brownfield/commit/533569b59a4981669dfb738295b505343623bc32) Thanks [@MrMuzyk](https://github.com/MrMuzyk)! - Expose the Brownfield Android Gradle Plugin source from the npm package for opt-in local patching.
+
+### Patch Changes
+
+- Updated dependencies [[`ef835b5`](https://github.com/callstack/react-native-brownfield/commit/ef835b52a130e4cd8770a2db04402cbb066b9c27)]:
+  - @callstack/brownfield-cli@3.13.0
+
+- [#391](https://github.com/callstack/react-native-brownfield/pull/391) [`95dbb43`](https://github.com/callstack/react-native-brownfield/commit/95dbb434d4c526b8f75bfd4c54b1d023e349ccf4) Thanks [@adamTrz](https://github.com/adamTrz)! - Fix Expo iOS framework debug bundle packaging so Debug builds load from Metro when it is available and fall back to embedded bundles without dev-server-only runtime code.
+
+## 3.12.0
+
+### Minor Changes
+
+- [#237](https://github.com/callstack/react-native-brownfield/pull/237) [`4186cc8`](https://github.com/callstack/react-native-brownfield/commit/4186cc8e2ed2fa7aa41e84cdba7a23f7035ee08d) Thanks [@hurali97](https://github.com/hurali97)! - Bump brownfield-gradle-plugin
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @callstack/brownfield-cli@3.12.0
+
+## 3.11.0
+
+### Minor Changes
+
+- [#358](https://github.com/callstack/react-native-brownfield/pull/358) [`3715ac7`](https://github.com/callstack/react-native-brownfield/commit/3715ac7783000756ef1c66ecfe24a85c5e43abab) Thanks [@adamTrz](https://github.com/adamTrz)! - Add `--add-spm-package` to `brownfield package:ios` so packaging can also generate a local Swift Package Manager wrapper around the produced XCFrameworks, including a generated `Package.swift`, `README.md`, and Xcode integration instructions. Fail fast when Debug packaging cannot resolve the app framework name while local SPM output is requested.
+
+- [#364](https://github.com/callstack/react-native-brownfield/pull/364) [`05c557d`](https://github.com/callstack/react-native-brownfield/commit/05c557da9e2b6fca02e6e1a0b0fe71a909bab15f) Thanks [@hurali97](https://github.com/hurali97)! - keep only one reference of xcframeworks when spm enabled
+
+- [#317](https://github.com/callstack/react-native-brownfield/pull/317) [`c04301b`](https://github.com/callstack/react-native-brownfield/commit/c04301b79d288ab108aaa44d7c79dd876b8405e9) Thanks [@adamTrz](https://github.com/adamTrz)! - Add an opt-in iOS Debug mode for loading the embedded JavaScript bundle with `preferEmbeddedBundleInDebug`, fix `bundleURLOverride` fallback behavior when the override returns `nil`, and add native bundle-resolution tests.
+
+### Patch Changes
+
+- Updated dependencies [[`3715ac7`](https://github.com/callstack/react-native-brownfield/commit/3715ac7783000756ef1c66ecfe24a85c5e43abab), [`05c557d`](https://github.com/callstack/react-native-brownfield/commit/05c557da9e2b6fca02e6e1a0b0fe71a909bab15f)]:
+  - @callstack/brownfield-cli@3.11.0
+
+- [#353](https://github.com/callstack/react-native-brownfield/pull/353) [`7955c62`](https://github.com/callstack/react-native-brownfield/commit/7955c62a6aca06174efee48e80ac14f78312c797) Thanks [@marcinszalski-callstack](https://github.com/marcinszalski-callstack)! - fix: call copyStrippedSoLibs once after the loop to avoid redundant SO file copying
+
+- [#361](https://github.com/callstack/react-native-brownfield/pull/361) [`aa14eb2`](https://github.com/callstack/react-native-brownfield/commit/aa14eb26e26ea1e6075b91027237e4b41b932b57) Thanks [@hurali97](https://github.com/hurali97)! - make EXUpdates as a dependency only when installed
+
+- [#347](https://github.com/callstack/react-native-brownfield/pull/347) [`c19a81b`](https://github.com/callstack/react-native-brownfield/commit/c19a81b7502cc458d742ab947186591bb69cb261) Thanks [@marcinszalski-callstack](https://github.com/marcinszalski-callstack)! - fix: fix method to deallocate reactNativeFactory instance for expo
+
+## 3.10.0
+
+### Minor Changes
+
+- [#323](https://github.com/callstack/react-native-brownfield/pull/323) [`3456d3a`](https://github.com/callstack/react-native-brownfield/commit/3456d3aded18002475def4b79889979e76e1db5e) Thanks [@artus9033](https://github.com/artus9033)! - Support RN prebuilts in Brownfield, by default enabled in RN >= 0.84, opt-in in RN 0.83; or in Expo 55+ (Expo 54 is not supported).
+  Add `--use-prebuilt-rn-core` to `brownfield package:ios` so callers can opt into or out of React Native Apple prebuilt binaries; omitting the flag defers to version-aware defaults handled by Rock. The CLI rejects `--use-prebuilt-rn-core` when React Native is older than 0.81 or when the project is Expo SDK older than 55.
+  Fix brownfield framework dylib install names to use @rpath instead of hardcoded paths.
+
+### Patch Changes
+
+- Updated dependencies [[`3456d3a`](https://github.com/callstack/react-native-brownfield/commit/3456d3aded18002475def4b79889979e76e1db5e)]:
+  - @callstack/brownfield-cli@3.10.0
+
+- [#323](https://github.com/callstack/react-native-brownfield/pull/323) [`3456d3a`](https://github.com/callstack/react-native-brownfield/commit/3456d3aded18002475def4b79889979e76e1db5e) Thanks [@artus9033](https://github.com/artus9033)! - Force `BUILD_LIBRARY_FOR_DISTRIBUTION` / `SWIFT_EMIT_MODULE_INTERFACE` on the CocoaPods ReactBrownfield, Brownie and BrownfieldNavigation targets so Release builds emit `.swiftinterface` files and `xcodebuild -create-xcframework` (brownfield `package:ios`) can merge slices.
+
+## 3.9.0
+
+### Minor Changes
+
+- [#326](https://github.com/callstack/react-native-brownfield/pull/326) [`80e6364`](https://github.com/callstack/react-native-brownfield/commit/80e6364d405d216b3e84a6297dfe346d2f01444b) Thanks [@artus9033](https://github.com/artus9033)! - feat: strip SO files by default, deprecate experimental option in favor of useStrippedSoFiles
+
+### Patch Changes
+
+- Updated dependencies [[`80e6364`](https://github.com/callstack/react-native-brownfield/commit/80e6364d405d216b3e84a6297dfe346d2f01444b)]:
+  - @callstack/brownfield-cli@3.9.0
+
+## 3.8.1
+
+### Patch Changes
+
+- [#336](https://github.com/callstack/react-native-brownfield/pull/336) [`35b6f0a`](https://github.com/callstack/react-native-brownfield/commit/35b6f0aebd51a86165fe8af1890ccc3bd5189aaa) Thanks [@hurali97](https://github.com/hurali97)! - fix: allow unregistering the navigation delegate
+
+- Updated dependencies [[`e78084d`](https://github.com/callstack/react-native-brownfield/commit/e78084d227a49d39d726b8c778bd56045634678d)]:
+  - @callstack/brownfield-cli@3.8.1
+
+- [#335](https://github.com/callstack/react-native-brownfield/pull/335) [`e78084d`](https://github.com/callstack/react-native-brownfield/commit/e78084d227a49d39d726b8c778bd56045634678d) Thanks [@hurali97](https://github.com/hurali97)! - fix: Object params correctly reflect the generated native code instead of Any
+
+## 3.8.0
+
+### Minor Changes
+
+- [#295](https://github.com/callstack/react-native-brownfield/pull/295) [`d93dcd9`](https://github.com/callstack/react-native-brownfield/commit/d93dcd96e3b90517d718cd42b2cc773fb9795eac) Thanks [@hurali97](https://github.com/hurali97)! - add expo updates support
+
+### Patch Changes
+
+- Updated dependencies [[`d93dcd9`](https://github.com/callstack/react-native-brownfield/commit/d93dcd96e3b90517d718cd42b2cc773fb9795eac)]:
+  - @callstack/brownfield-cli@3.8.0
+
+## 3.7.0
+
+### Minor Changes
+
+- [#313](https://github.com/callstack/react-native-brownfield/pull/313) [`c153378`](https://github.com/callstack/react-native-brownfield/commit/c1533783c0a93372b3c12f08c1428766c0405226) Thanks [@alpharius-ck](https://github.com/alpharius-ck)! - Jest unit tests
+
+### Patch Changes
+
+- [#322](https://github.com/callstack/react-native-brownfield/pull/322) [`cbc99cf`](https://github.com/callstack/react-native-brownfield/commit/cbc99cf2bbbb8ba351a2bde3c839dd1b5dcf302b) Thanks [@marcinszalski-callstack](https://github.com/marcinszalski-callstack)! - fix: make sure android libs are loaded for expo apps
+
+- Updated dependencies [[`c153378`](https://github.com/callstack/react-native-brownfield/commit/c1533783c0a93372b3c12f08c1428766c0405226)]:
+  - @callstack/brownfield-cli@3.7.0
+
+- [#315](https://github.com/callstack/react-native-brownfield/pull/315) [`874332b`](https://github.com/callstack/react-native-brownfield/commit/874332b8a4cc58e945adad64cbaebfbe4d6cae88) Thanks [@marcinszalski-callstack](https://github.com/marcinszalski-callstack)! - fix: make sure native libs are loaded for RN >= 0.80
+

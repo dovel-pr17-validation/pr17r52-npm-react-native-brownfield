@@ -1,0 +1,35 @@
+name: ktlint and detekt
+
+on:
+  push:
+    branches: ['main']
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Run Detekt & KtLint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
+
+      - name: Prepare Android environment
+        uses: ./.github/actions/prepare-android
+        with:
+          free-disk-space: 'false'
+          run-yarn-build: 'false'
+          android-ccache: 'false'
+
+      - name: Run Detekt
+        working-directory: gradle-plugins/react/brownfield
+        run: ./gradlew detekt --no-daemon --stacktrace
+
+      - name: Run KtLint
+        working-directory: gradle-plugins/react/brownfield
+        run: ./gradlew ktlintCheck --no-daemon --stacktrace
+
+      - name: Run Unit Tests
+        working-directory: gradle-plugins/react/brownfield
+        run: ./gradlew test --no-daemon --stacktrace

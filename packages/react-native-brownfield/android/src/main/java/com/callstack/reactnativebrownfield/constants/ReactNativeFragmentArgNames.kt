@@ -1,0 +1,22 @@
+package com.callstack.reactnativebrownfield.constants
+
+import com.facebook.react.ReactFragment
+
+/**
+ * Convenience export of arguments that can be used
+ */
+class ReactNativeFragmentArgNames private constructor() :
+    ReactFragment() // subclass to gain access to protected constants
+{
+    companion object {
+        /**
+         * The module name to be loaded
+         */
+        const val ARG_MODULE_NAME = "arg_module_name"
+
+        // re-export constants from ReactFragment to enable access
+        const val ARG_LAUNCH_OPTIONS: String = "arg_launch_options"
+        const val ARG_WAIT_FOR_FULL_DISPLAY = "arg_wait_for_full_display"
+        const val ARG_COLLECT_THREAD_METRICS = "arg_collect_thread_metrics"
+    }
+}

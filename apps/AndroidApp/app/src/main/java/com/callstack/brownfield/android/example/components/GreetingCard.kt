@@ -1,0 +1,92 @@
+package com.callstack.brownfield.android.example.components
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
+import com.callstack.brownfield.android.example.E2eTestIds
+import androidx.compose.ui.unit.dp
+import com.callstack.brownfield.android.example.BrownfieldStore
+import com.callstack.brownie.Store
+import com.callstack.brownie.StoreManager
+
+private fun brownieStore(): Store<BrownfieldStore>? {
+    // Use the Class overload — package-level reified `store()` is not reliably visible
+    // when brownie is consumed only via the fat-merged brownfieldlib AAR.
+    return StoreManager.shared.store(
+        BrownfieldStore.STORE_NAME,
+        BrownfieldStore::class.java,
+    )
+}
+
+@Composable
+fun GreetingCard(
+    name: String,
+) {
+    var counter by remember { mutableIntStateOf(0) }
+
+    DisposableEffect(Unit) {
+        val store = brownieStore()
+        var previous: Int? = null
+        // Member subscribe only — selector extension is a package-level helper.
+        val unsubscribe =
+            store?.subscribe { state ->
+                val updatedCounter = state.counter.toInt()
+                if (previous != updatedCounter) {
+                    previous = updatedCounter
+                    counter = updatedCounter
+                }
+            } ?: {}
+
+        onDispose {
+            unsubscribe()
+        }
+    }
+
+    MaterialCard {
+        EspressoTagAnchor(
+            tag = E2eTestIds.nativeAppGreeting,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Hello native $name 👋",
+                    style = MaterialTheme.typography.titleMedium,
+                    textAlign = TextAlign.Center,
+                )
+
+                Text(
+                    text = "You clicked the button $counter time${if (counter == 1) "" else "s"}",
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+
+                Button(onClick = {
+                    brownieStore()?.set { state ->
+                        state.copy(counter = state.counter + 1)
+                    }
+                }) {
+                    Text("Increment counter")
+                }
+            }
+        }
+    }
+}

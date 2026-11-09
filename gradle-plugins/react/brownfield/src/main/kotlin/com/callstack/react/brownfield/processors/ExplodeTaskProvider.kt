@@ -1,0 +1,62 @@
+package com.callstack.react.brownfield.processors
+
+import com.android.build.api.variant.LibraryVariant
+import com.callstack.react.brownfield.shared.BundleTaskProvider
+import com.callstack.react.brownfield.shared.ExplodeAarTask
+import com.callstack.react.brownfield.shared.UnresolvedArtifactInfo
+import com.callstack.react.brownfield.utils.Extension
+import com.callstack.react.brownfield.utils.capitalized
+import org.gradle.api.Project
+import org.gradle.api.Task
+import org.gradle.api.tasks.TaskProvider
+import org.gradle.api.tasks.bundling.Zip
+import java.io.File
+
+object ExplodeTaskProvider {
+    fun getTask(
+        variant: LibraryVariant,
+        project: Project,
+        artifacts: List<UnresolvedArtifactInfo>,
+    ): TaskProvider<ExplodeAarTask> {
+        val variantTaskProvider = VariantTaskProvider(project)
+        val bundleProvider = BundleTaskProvider(variantTaskProvider)
+        val capitalizedVariantName = variant.name.capitalized()
+        val projectExt = project.extensions.getByType(Extension::class.java)
+
+        return project.tasks.register(
+            "explode${capitalizedVariantName}Aar",
+            ExplodeAarTask::class.java,
+        ) { task ->
+            task.variantName.set(variant.name)
+
+            val finalArtifacts = mutableListOf<UnresolvedArtifactInfo>()
+            artifacts.forEach { art ->
+                var artifactPath = art.file
+                if (art.isExpoPublishDependency != true) {
+                    val dependencyProject = project.project(":${art.moduleName}")
+                    val bundleTaskProvider = bundleProvider.getBundleTask(dependencyProject, variant, projectExt.missingDimensionStrategies)
+                    val taskName = bundleTaskProvider.name
+                    dependencyProject.tasks.findByName(taskName)?.let { task.dependsOn(it) }
+                    artifactPath = createArtifactFile(bundleTaskProvider.get()).absolutePath
+                }
+
+                finalArtifacts.add(
+                    UnresolvedArtifactInfo(
+                        art.moduleGroup,
+                        art.moduleName,
+                        art.moduleVersion,
+                        artifactPath,
+                        isExpoPublishDependency = art.isExpoPublishDependency,
+                    ),
+                )
+            }
+
+            task.inputArtifacts.set(finalArtifacts)
+        }
+    }
+
+    private fun createArtifactFile(bundle: Task): File {
+        val packageLibraryProvider = bundle as Zip
+        return File(packageLibraryProvider.destinationDirectory.get().asFile, packageLibraryProvider.archiveFileName.get())
+    }
+}

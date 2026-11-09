@@ -1,0 +1,285 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+
+import { parseNavigationSpec } from '../parser.js';
+
+function createTempSpecFile(contents: string): string {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'navigation-parser-'));
+  const specPath = path.join(tempDir, 'brownfield.navigation.ts');
+  fs.writeFileSync(specPath, contents);
+  return specPath;
+}
+
+function cleanupTempSpecFile(specPath: string): void {
+  fs.rmSync(path.dirname(specPath), { recursive: true, force: true });
+}
+
+describe('parseNavigationSpec', () => {
+  const tempSpecFiles: string[] = [];
+
+  afterEach(() => {
+    for (const specPath of tempSpecFiles) {
+      cleanupTempSpecFile(specPath);
+    }
+    tempSpecFiles.length = 0;
+  });
+
+  it('parses methods from BrownfieldNavigationSpec interface', () => {
+    const specPath = createTempSpecFile(`
+      export interface BrownfieldNavigationSpec {
+        openScreen(route: string, params?: Object): void;
+      }
+    `);
+    tempSpecFiles.push(specPath);
+
+    const parsedSpec = parseNavigationSpec(specPath);
+
+    expect(parsedSpec.methods).toEqual([
+      {
+        name: 'openScreen',
+        params: [
+          { name: 'route', type: 'string', optional: false },
+          { name: 'params', type: 'Object', optional: true },
+        ],
+        returnType: 'void',
+        isAsync: false,
+      },
+    ]);
+    expect(parsedSpec.referencedTypeDeclarations).toEqual([]);
+    expect(parsedSpec.modelDefinitions).toEqual([]);
+  });
+
+  it('falls back to Spec interface when BrownfieldNavigationSpec is absent', () => {
+    const specPath = createTempSpecFile(`
+      export interface Spec {
+        presentModal(id: string): number;
+      }
+    `);
+    tempSpecFiles.push(specPath);
+
+    const parsedSpec = parseNavigationSpec(specPath);
+
+    expect(parsedSpec.methods).toEqual([
+      {
+        name: 'presentModal',
+        params: [{ name: 'id', type: 'string', optional: false }],
+        returnType: 'number',
+        isAsync: false,
+      },
+    ]);
+    expect(parsedSpec.referencedTypeDeclarations).toEqual([]);
+    expect(parsedSpec.modelDefinitions).toEqual([]);
+  });
+
+  it('collects referenced type declarations used in method signatures', () => {
+    const specPath = createTempSpecFile(`
+      export type UserType = {
+        name: string;
+      };
+
+      export interface BrownfieldNavigationSpec {
+        navigateToSettings(user: UserType): void;
+      }
+    `);
+    tempSpecFiles.push(specPath);
+
+    const parsedSpec = parseNavigationSpec(specPath);
+
+    expect(parsedSpec.referencedTypeDeclarations).toEqual([
+      {
+        name: 'UserType',
+        declaration: `export type UserType = {\n        name: string;\n      };`,
+      },
+    ]);
+    expect(parsedSpec.modelDefinitions).toEqual([
+      {
+        name: 'UserType',
+        fields: [{ name: 'name', type: 'string', optional: false }],
+      },
+    ]);
+  });
+
+  it('exports referenced declarations even when source declarations are not exported', () => {
+    const specPath = createTempSpecFile(`
+      type UserType = {
+        name: string;
+      };
+
+      interface BrownfieldNavigationSpec {
+        navigateToSettings(user: UserType): void;
+      }
+    `);
+    tempSpecFiles.push(specPath);
+
+    const parsedSpec = parseNavigationSpec(specPath);
+
+    expect(parsedSpec.referencedTypeDeclarations).toEqual([
+      {
+        name: 'UserType',
+        declaration: `export type UserType = {\n        name: string;\n      };`,
+      },
+    ]);
+    expect(parsedSpec.modelDefinitions).toEqual([
+      {
+        name: 'UserType',
+        fields: [{ name: 'name', type: 'string', optional: false }],
+      },
+    ]);
+  });
+
+  it('parses function-typed parameters into a callback signature', () => {
+    const specPath = createTempSpecFile(`
+      export interface BrownfieldNavigationSpec {
+        navigateToProfile(userId: string, onDismiss: (reason?: string) => void): void;
+      }
+    `);
+    tempSpecFiles.push(specPath);
+
+    const parsedSpec = parseNavigationSpec(specPath);
+
+    expect(parsedSpec.methods).toEqual([
+      {
+        name: 'navigateToProfile',
+        params: [
+          { name: 'userId', type: 'string', optional: false },
+          {
+            name: 'onDismiss',
+            type: '(reason?: string) => void',
+            optional: false,
+            callback: {
+              params: [{ name: 'reason', type: 'string', optional: true }],
+              returnType: 'void',
+            },
+          },
+        ],
+        returnType: 'void',
+        isAsync: false,
+      },
+    ]);
+  });
+
+  it('parses Promise-returning methods into promiseReturnType and isAsync', () => {
+    const specPath = createTempSpecFile(`
+      export interface BrownfieldNavigationSpec {
+        requestPermission(name: string): Promise<boolean>;
+      }
+    `);
+    tempSpecFiles.push(specPath);
+
+    const parsedSpec = parseNavigationSpec(specPath);
+
+    expect(parsedSpec.methods).toEqual([
+      {
+        name: 'requestPermission',
+        params: [{ name: 'name', type: 'string', optional: false }],
+        returnType: 'Promise<boolean>',
+        isAsync: true,
+        promiseReturnType: 'boolean',
+      },
+    ]);
+  });
+
+  it('throws when a parameter is typed as a Promise', () => {
+    const specPath = createTempSpecFile(`
+      export interface BrownfieldNavigationSpec {
+        foo(cb: Promise<string>): void;
+      }
+    `);
+    tempSpecFiles.push(specPath);
+
+    expect(() => parseNavigationSpec(specPath)).toThrow(
+      'Unsupported Promise parameter "cb" in method "foo": Promise<T> is only supported as a method return type.'
+    );
+  });
+
+  it('throws when a callback parameter has a non-void return type', () => {
+    const specPath = createTempSpecFile(`
+      export interface BrownfieldNavigationSpec {
+        bar(cb: () => string): void;
+      }
+    `);
+    tempSpecFiles.push(specPath);
+
+    expect(() => parseNavigationSpec(specPath)).toThrow(
+      'Unsupported callback parameter "cb" in method "bar": callback return type "string" is not supported. Use a void callback or model the result as a Promise-returning navigation method.'
+    );
+  });
+
+  it('parses optional callback parameters as optional', () => {
+    const specPath = createTempSpecFile(`
+      export interface BrownfieldNavigationSpec {
+        maybeBanner(message: string, onDismiss?: () => void): void;
+      }
+    `);
+    tempSpecFiles.push(specPath);
+
+    const parsedSpec = parseNavigationSpec(specPath);
+
+    expect(parsedSpec.methods).toEqual([
+      {
+        name: 'maybeBanner',
+        params: [
+          { name: 'message', type: 'string', optional: false },
+          {
+            name: 'onDismiss',
+            type: '() => void',
+            optional: true,
+            callback: {
+              params: [],
+              returnType: 'void',
+            },
+          },
+        ],
+        returnType: 'void',
+        isAsync: false,
+      },
+    ]);
+  });
+
+  it('throws when an async method uses a reserved parameter name', () => {
+    const specPath = createTempSpecFile(`
+      export interface BrownfieldNavigationSpec {
+        requestPermission(promise: string): Promise<boolean>;
+      }
+    `);
+    tempSpecFiles.push(specPath);
+
+    expect(() => parseNavigationSpec(specPath)).toThrow(
+      'Reserved parameter name "promise" in async method "requestPermission": this name is used by the generated bridging code. Rename the parameter.'
+    );
+  });
+
+  it('throws when an async method uses "resolve" or "reject" as a parameter name', () => {
+    const specPath = createTempSpecFile(`
+      export interface BrownfieldNavigationSpec {
+        doAsync(resolve: string, reject: string): Promise<boolean>;
+      }
+    `);
+    tempSpecFiles.push(specPath);
+
+    expect(() => parseNavigationSpec(specPath)).toThrow(
+      'Reserved parameter name "resolve" in async method "doAsync": this name is used by the generated bridging code. Rename the parameter.'
+    );
+  });
+
+  it('throws when no valid spec interface is present', () => {
+    const specPath = createTempSpecFile(`
+      export interface NavigationSpec {
+        noOp(): void;
+      }
+    `);
+    tempSpecFiles.push(specPath);
+
+    expect(() => parseNavigationSpec(specPath)).toThrow(
+      'Could not find BrownfieldNavigationSpec or Spec interface in spec file'
+    );
+  });
+
+  it('throws when spec file does not exist', () => {
+    expect(() => parseNavigationSpec('/tmp/non-existent-navigation-spec.ts')).toThrow(
+      'Spec file not found: /tmp/non-existent-navigation-spec.ts'
+    );
+  });
+});
